@@ -312,16 +312,21 @@ Push, watch the GitHub Actions build, fix compile errors with minimal changes un
 - [x] WS-B Theme
 - [x] WS-C Editor engine
 - [x] WS-D Window, menus, outline
-- [ ] WS-E CI green
+- [x] WS-E CI green (run 2, commit 2fba8d8: universal Release build, 557 KB app artifact)
 - [ ] Review pass
 
 ## Resume from here
 
-WS-A to WS-D are written and committed; none of the app code has been compiled yet.
-Next: WS-E. Check the latest GitHub Actions "Build" run on branch `claude/funny-hypatia-6hw2n3`
-(workflow `.github/workflows/build.yml`, runner `macos-26`; if that label is unavailable switch to
-`macos-latest`). Download or read the job log, then have an Opus subagent fix compile errors with minimal
-changes, push, and repeat until green. Then run a review pass. Known loose ends from the agents' reports:
+The app compiles: GitHub Actions "Build" is green on `claude/funny-hypatia-6hw2n3` and uploads a
+downloadable, ad-hoc-signed universal `Parchment-app` artifact. The only fix needed after WS-A to WS-D was
+renaming the core `TextRange` to `MarkdownRange` (it clashed with a new macOS 26 SDK type).
+
+Next:
+1. The user tries the app on their Mac and reports what feels off.
+2. Review pass (Opus subagent): correctness of the editor engine (undo, IME/marked text, styling after
+   undo/redo, focus mode, image layout), then fix and push; CI must stay green.
+
+Known loose ends from the agents' reports:
 - WS-C's "least sure to compile" list: nonisolated `MarkdownLayoutManager` under default MainActor isolation,
   `MainActor.assumeIsolated` inside NotificationCenter closures, `NSAttributedString.Key.tracking`,
   `NSImage.draw(... hints:)` key spelling, `perform(_:)` overload next to `NSObject.perform(_:)`.
