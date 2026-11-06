@@ -313,26 +313,29 @@ Push, watch the GitHub Actions build, fix compile errors with minimal changes un
 - [x] WS-C Editor engine
 - [x] WS-D Window, menus, outline
 - [x] WS-E CI green (run 2, commit 2fba8d8: universal Release build, 557 KB app artifact)
-- [ ] Review pass
+- [x] Review pass (commit a9b3278, CI run 4 green)
+- [ ] User tries the app on their Mac
 
 ## Resume from here
 
-The app compiles: GitHub Actions "Build" is green on `claude/funny-hypatia-6hw2n3` and uploads a
-downloadable, ad-hoc-signed universal `Parchment-app` artifact. The only fix needed after WS-A to WS-D was
-renaming the core `TextRange` to `MarkdownRange` (it clashed with a new macOS 26 SDK type).
+The app compiles and the review pass is done: GitHub Actions "Build" is green on `claude/funny-hypatia-6hw2n3`
+(run 4, commit a9b3278) and uploads a downloadable, ad-hoc-signed universal `Parchment-app` artifact.
+
+Review pass fixes (a9b3278):
+- An image on the last line without a trailing newline is now shown: the text view grows its bottom inset
+  (`applyContainerInset`, `textContainerOrigin` override keeps the top fixed) and draws that image in `draw(_:)`.
+  The styler calls `stylingDidChange()` after restyles.
+- `textViewDidChangeSelection` now calls `EditorController.caretDidMove(to:)`, so the outline highlight follows the caret.
+- `apply` calls `breakUndoCoalescing()` so smart list, auto-pair and format edits are separate undo steps.
+- Task-circle clicks are ignored while IME text is being composed.
+- `EditorCoordinator.update` clears undo actions before reloading text (e.g. Revert).
+- A hidden `Bigger` button bound to ⌘= was added; it may do nothing at runtime (SwiftUI can drop hidden items).
 
 Next:
-1. The user tries the app on their Mac and reports what feels off.
-2. Review pass (Opus subagent): correctness of the editor engine (undo, IME/marked text, styling after
-   undo/redo, focus mode, image layout), then fix and push; CI must stay green.
+1. The user tries the app on their Mac and reports what feels off. Check in particular: the bottom space under a
+   last-line image (the fix assumes the view height is text height plus twice the inset; it may be half too small
+   or leave extra blank space), and whether ⌘= triggers Bigger.
 
-Known loose ends from the agents' reports:
-- WS-C's "least sure to compile" list: nonisolated `MarkdownLayoutManager` under default MainActor isolation,
-  `MainActor.assumeIsolated` inside NotificationCenter closures, `NSAttributedString.Key.tracking`,
-  `NSImage.draw(... hints:)` key spelling, `perform(_:)` overload next to `NSObject.perform(_:)`.
-- WS-D's list: `.toolbar(removing: .title)`, `.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)`,
-  `@Bindable` shadowing in `DocumentWindowView`, `Toggle` + `@AppStorage` inside `Commands`.
-- Engine never calls `EditorController.caretDidMove(to:)`; the outline's current-heading highlight falls back to
-  the text view's selection. Wiring it from `textViewDidChangeSelection` is a small follow-up.
-- An image on the very last line without a trailing newline is not shown (no paragraph spacing to reserve).
-- ⌘= may not trigger "Bigger" (only ⌘+ is bound).
+Known, deliberately not fixed:
+- A full restyle (window resize, image load) during IME composition can wipe the composition underline. Rare.
+- `document.text = textView.string` copies the whole text on every keystroke. Performance only.
