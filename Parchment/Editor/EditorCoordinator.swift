@@ -63,7 +63,8 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     func update(from view: EditorView, undoManager: UndoManager?) {
         documentUndoManager = undoManager
-        if view.controller !== controller {
+        let controllerChanged = view.controller !== controller
+        if controllerChanged {
             controller = view.controller
         }
         guard let textView else { return }
@@ -71,7 +72,11 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
 
         if view.document !== document {
             document = view.document
+            // Undo actions recorded against the old text would apply to the wrong ranges.
+            textView.undoManager?.removeAllActions()
             textView.loadText(document.text)
+            controller.textDidChange(styler.text, lines: styler.lines)
+        } else if controllerChanged {
             controller.textDidChange(styler.text, lines: styler.lines)
         }
         if styler.documentURL != view.fileURL {
@@ -166,6 +171,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     func textViewDidChangeSelection(_ notification: Notification) {
         guard let textView else { return }
         controller.selectionDidChange(selectedText: Self.selectedText(in: textView))
+        controller.caretDidMove(to: textView.selectedRange().location)
         textView.editorSelectionDidChange()
     }
 

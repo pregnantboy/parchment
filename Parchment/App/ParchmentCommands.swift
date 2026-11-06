@@ -64,6 +64,10 @@ struct ParchmentCommands: Commands {
 
             Button("Bigger") { fontSize = min(fontSize + 1, EditorMetrics.fontSizeRange.upperBound) }
                 .keyboardShortcut("+", modifiers: .command)
+            // ⌘= without Shift, as in other Mac apps; hidden so the menu shows one Bigger item.
+            Button("Bigger") { fontSize = min(fontSize + 1, EditorMetrics.fontSizeRange.upperBound) }
+                .keyboardShortcut("=", modifiers: .command)
+                .hidden()
             Button("Smaller") { fontSize = max(fontSize - 1, EditorMetrics.fontSizeRange.lowerBound) }
                 .keyboardShortcut("-", modifiers: .command)
             Button("Actual Size") { fontSize = EditorMetrics.defaultFontSize }

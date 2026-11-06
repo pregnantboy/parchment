@@ -77,6 +77,7 @@ final class MarkdownStyler {
         }
         restyleLines(indices, in: storage)
         updateTypingAttributes()
+        (textView as? ParchmentTextView)?.stylingDidChange()
     }
 
     /// Restyles the image lines whose source resolves to `url`, or every image line when
@@ -95,6 +96,7 @@ final class MarkdownStyler {
         }
         guard !indices.isEmpty else { return }
         restyleLines(indices, in: storage)
+        (textView as? ParchmentTextView)?.stylingDidChange()
     }
 
     /// Records how much horizontal room images have, restyling image lines when that changes
@@ -320,13 +322,13 @@ final class MarkdownStyler {
     }
 
     /// Image lines show their source in marker color. A loaded image reserves its height as
-    /// paragraph spacing; the layout manager draws it there. The last line of a document has
-    /// no paragraph spacing to reserve, so its image appears once the line ends with a break.
+    /// paragraph spacing; the layout manager draws it there. On the document's last line,
+    /// which has no line break, the text view reserves the room and draws the image itself.
     private func styleImage(_ line: MarkdownLine, source: String, in storage: NSTextStorage) {
         let body = FontBook.shared.text(size: metrics.fontSize)
         var spacingAfter = metrics.paragraphSpacing
         var image: NSImage?
-        if line.lineBreakLength > 0, let loaded = loadedImage(for: source) {
+        if let loaded = loadedImage(for: source) {
             image = loaded.image
             spacingAfter = loaded.height + Self.imageVerticalPadding
         }

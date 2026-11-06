@@ -46,8 +46,17 @@ final class ParchmentTextView: NSTextView {
     private var lastFocusState: FocusState?
     /// Whether any dimming has been applied since focus mode was last cleared.
     private var hasFocusDimming = false
+    /// The container inset from the column and typewriter geometry, before the room for a
+    /// trailing image is added below the text.
+    private var baseContainerInset = NSSize.zero
+    /// Room reserved below the text for an image on the document's last line. That line has
+    /// no line break, so the paragraph spacing that holds every other image doesn't exist.
+    private var trailingImageReserve: CGFloat = 0
 
     private static let minimumSideInset = 24.0
+    /// Matches the layout manager's gap between an image and its source line.
+    private static let imageTopGap: CGFloat = 12
+    private static let imageRadius: CGFloat = 12
     private static let tapSlop: CGFloat = 6
 
     // MARK: - Construction
@@ -98,7 +107,8 @@ final class ParchmentTextView: NSTextView {
         autoresizingMask = [.width]
         minSize = .zero
         maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textContainerInset = NSSize(width: Self.minimumSideInset, height: metrics.topInset)
+        baseContainerInset = NSSize(width: Self.minimumSideInset, height: metrics.topInset)
+        textContainerInset = baseContainerInset
     }
 
     /// Replaces the whole text without registering undo, then styles it from scratch.
@@ -171,6 +181,8 @@ final class ParchmentTextView: NSTextView {
         guard shouldChangeText(in: range, replacementString: edit.replacement) else { return }
         storage.replaceCharacters(in: range, with: edit.replacement)
         didChangeText()
+        // Keep the edit its own undo step, apart from any typing that follows.
+        breakUndoCoalescing()
 
         let selection = NSRange(edit.selection)
         if NSMaxRange(selection) <= storage.length {
@@ -236,7 +248,8 @@ final class ParchmentTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let boxLocation = taskBoxLocation(at: point) {
+        // While an input method is composing, the styler's parse is stale; let super commit first.
+        if !hasMarkedText(), let boxLocation = taskBoxLocation(at: point) {
             if let edit = MarkdownEditing.toggleTaskBox(at: boxLocation, in: currentMarkdownText(), selection: currentSelection) {
                 apply(edit, revealSelection: false)
             }
@@ -362,10 +375,7 @@ final class ParchmentTextView: NSTextView {
         }
         if width > 0 {
             let verticalInset = isTypewriterMode ? max(metrics.topInset, Double(height) / 2) : metrics.topInset
-            let inset = NSSize(width: column.sideInset.rounded(.down), height: verticalInset.rounded())
-            if textContainerInset != inset {
-                textContainerInset = inset
-            }
+            baseContainerInset = NSSize(width: column.sideInset.rounded(.down), height: verticalInset.rounded())
             styler?.updateAvailableImageWidth(width - column.sideInset.rounded(.down) - column.gutter - Self.minimumSideInset)
         }
 
@@ -375,6 +385,84 @@ final class ParchmentTextView: NSTextView {
             lastFocusState = nil
             refreshFocusDimming()
         }
+        applyContainerInset()
+    }
+
+    // MARK: - Trailing image
+
+    /// Called by the styler after it restyles, since the last line may have gained or lost an image.
+    func stylingDidChange() {
+        applyContainerInset()
+    }
+
+    /// The text container sits `baseContainerInset.height` from the top. The inset is grown by
+    /// half the trailing image reserve and `textContainerOrigin` moves back up by the same
+    /// amount, so the whole reserve lands below the text (the view adds the inset above and below).
+    private func applyContainerInset() {
+        var reserve: CGFloat = 0
+        if let trailing = trailingImage() {
+            reserve = (trailing.spacing / 2).rounded(.up) * 2
+        }
+        let reserveChanged = reserve != trailingImageReserve
+        trailingImageReserve = reserve
+        let inset = NSSize(width: baseContainerInset.width, height: baseContainerInset.height + reserve / 2)
+        if textContainerInset != inset {
+            textContainerInset = inset
+        }
+        if reserveChanged {
+            needsDisplay = true
+        }
+    }
+
+    override var textContainerOrigin: NSPoint {
+        let origin = super.textContainerOrigin
+        return NSPoint(x: origin.x, y: origin.y - trailingImageReserve / 2)
+    }
+
+    /// The image on the last line when that line has no line break, with the height the styler
+    /// sized it to and the paragraph spacing it reserved for it.
+    private func trailingImage() -> (image: NSImage, height: CGFloat, spacing: CGFloat)? {
+        guard let storage = textStorage, storage.length > 0 else { return nil }
+        let last = storage.length - 1
+        let character = storage.mutableString.character(at: last)
+        guard character != 10, character != 13 else { return nil }
+        let attributes = storage.attributes(at: last, effectiveRange: nil)
+        guard let image = attributes[.parchmentImage] as? NSImage,
+              let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle else { return nil }
+        let height = paragraph.paragraphSpacing - Self.imageTopGap * 2
+        guard height > 1, image.size.width > 0, image.size.height > 0 else { return nil }
+        return (image, height, paragraph.paragraphSpacing)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        drawTrailingImage(in: dirtyRect)
+    }
+
+    /// The layout manager draws images in their line's paragraph spacing; the last line has
+    /// none, so its image is drawn here, in the reserve below the text.
+    private func drawTrailingImage(in dirtyRect: NSRect) {
+        guard trailingImageReserve > 0, let trailing = trailingImage(), let storage = textStorage,
+              let line = lineRect(forCharacterAt: storage.length - 1) else { return }
+        let size = trailing.image.size
+        let destination = NSRect(
+            x: textContainerOrigin.x + CGFloat(effectiveGutter),
+            y: line.maxY + Self.imageTopGap,
+            width: trailing.height * size.width / size.height,
+            height: trailing.height
+        )
+        guard destination.intersects(dirtyRect) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: destination, xRadius: Self.imageRadius, yRadius: Self.imageRadius).addClip()
+        trailing.image.draw(
+            in: destination,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)]
+        )
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     /// Called when the scroll view's visible height changes, which typewriter insets depend on.
