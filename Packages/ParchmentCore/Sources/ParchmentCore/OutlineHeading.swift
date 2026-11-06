@@ -5,9 +5,9 @@ public struct OutlineHeading: Identifiable, Hashable, Sendable {
     public var level: Int
     public var title: String
     /// The whole heading line.
-    public var range: TextRange
+    public var range: MarkdownRange
 
-    public init(level: Int, title: String, range: TextRange) {
+    public init(level: Int, title: String, range: MarkdownRange) {
         self.level = level
         self.title = title
         self.range = range

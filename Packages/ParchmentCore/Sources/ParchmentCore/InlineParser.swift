@@ -3,7 +3,7 @@
 /// It follows CommonMark closely enough for styling, without building a syntax tree.
 /// Emphasis never crosses a line, which keeps restyling local to the edited line.
 enum InlineParser {
-    static func parse(_ text: MarkdownText, range: TextRange, into spans: inout [MarkdownSpan]) {
+    static func parse(_ text: MarkdownText, range: MarkdownRange, into spans: inout [MarkdownSpan]) {
         guard !range.isEmpty else { return }
         // Positions claimed by code spans, escapes, and link destinations.
         var claimed = [Bool](repeating: false, count: range.length)
@@ -16,14 +16,14 @@ enum InlineParser {
 
     // MARK: - Code spans and escapes
 
-    private static func parseCodeAndEscapes(_ text: MarkdownText, range: TextRange, claimed: inout [Bool], spans: inout [MarkdownSpan]) {
+    private static func parseCodeAndEscapes(_ text: MarkdownText, range: MarkdownRange, claimed: inout [Bool], spans: inout [MarkdownSpan]) {
         let start = range.location
         let end = range.upperBound
         var index = start
         while index < end {
             let unit = text[index]
             if unit == Unit.backslash, index + 1 < end, Unit.isASCIIPunctuation(text[index + 1]) {
-                spans.append(MarkdownSpan(.syntax, TextRange(location: index, length: 1)))
+                spans.append(MarkdownSpan(.syntax, MarkdownRange(location: index, length: 1)))
                 claimed[index - start] = true
                 claimed[index + 1 - start] = true
                 index += 2
@@ -36,11 +36,11 @@ enum InlineParser {
                 guard let close = closingBacktickRun(text, length: runLength, from: index, to: end) else {
                     continue
                 }
-                spans.append(MarkdownSpan(.syntax, TextRange(location: runStart, length: runLength)))
+                spans.append(MarkdownSpan(.syntax, MarkdownRange(location: runStart, length: runLength)))
                 if close > index {
-                    spans.append(MarkdownSpan(.code, TextRange(index..<close)))
+                    spans.append(MarkdownSpan(.code, MarkdownRange(index..<close)))
                 }
-                spans.append(MarkdownSpan(.syntax, TextRange(location: close, length: runLength)))
+                spans.append(MarkdownSpan(.syntax, MarkdownRange(location: close, length: runLength)))
                 for position in runStart..<(close + runLength) {
                     claimed[position - start] = true
                 }
@@ -67,7 +67,7 @@ enum InlineParser {
 
     // MARK: - Links
 
-    private static func parseLinks(_ text: MarkdownText, range: TextRange, claimed: inout [Bool], spans: inout [MarkdownSpan]) {
+    private static func parseLinks(_ text: MarkdownText, range: MarkdownRange, claimed: inout [Bool], spans: inout [MarkdownSpan]) {
         let start = range.location
         let end = range.upperBound
         var index = start
@@ -79,11 +79,11 @@ enum InlineParser {
             }
 
             if unit == Unit.lessThan, let close = autolinkEnd(text, from: index, to: end, claimed: claimed, base: start) {
-                let destination = TextRange((index + 1)..<close)
+                let destination = MarkdownRange((index + 1)..<close)
                 let url = text.string(in: destination)
-                spans.append(MarkdownSpan(.syntax, TextRange(location: index, length: 1)))
+                spans.append(MarkdownSpan(.syntax, MarkdownRange(location: index, length: 1)))
                 spans.append(MarkdownSpan(.linkText(destination: url), destination))
-                spans.append(MarkdownSpan(.syntax, TextRange(location: close, length: 1)))
+                spans.append(MarkdownSpan(.syntax, MarkdownRange(location: close, length: 1)))
                 for position in index...close { claimed[position - start] = true }
                 index = close + 1
                 continue
@@ -102,15 +102,15 @@ enum InlineParser {
             let destinationRange = trimmedDestination(text, from: textEnd + 2, to: destinationEnd)
             let destination = text.string(in: destinationRange)
 
-            spans.append(MarkdownSpan(.syntax, TextRange(openerStart..<(index + 1))))
+            spans.append(MarkdownSpan(.syntax, MarkdownRange(openerStart..<(index + 1))))
             if textEnd > index + 1 {
-                spans.append(MarkdownSpan(.linkText(destination: destination), TextRange((index + 1)..<textEnd)))
+                spans.append(MarkdownSpan(.linkText(destination: destination), MarkdownRange((index + 1)..<textEnd)))
             }
-            spans.append(MarkdownSpan(.syntax, TextRange(location: textEnd, length: 2)))
+            spans.append(MarkdownSpan(.syntax, MarkdownRange(location: textEnd, length: 2)))
             if !destinationRange.isEmpty {
-                spans.append(MarkdownSpan(.linkDestination(destination: destination), TextRange((textEnd + 2)..<destinationEnd)))
+                spans.append(MarkdownSpan(.linkDestination(destination: destination), MarkdownRange((textEnd + 2)..<destinationEnd)))
             }
-            spans.append(MarkdownSpan(.syntax, TextRange(location: destinationEnd, length: 1)))
+            spans.append(MarkdownSpan(.syntax, MarkdownRange(location: destinationEnd, length: 1)))
 
             for position in openerStart...index { claimed[position - start] = true }
             for position in textEnd...destinationEnd { claimed[position - start] = true }
@@ -154,17 +154,17 @@ enum InlineParser {
     }
 
     /// The URL part of a link destination, without surrounding spaces, angle brackets, or title.
-    private static func trimmedDestination(_ text: MarkdownText, from start: Int, to end: Int) -> TextRange {
+    private static func trimmedDestination(_ text: MarkdownText, from start: Int, to end: Int) -> MarkdownRange {
         var lower = start
         while lower < end, text[lower] == Unit.space { lower += 1 }
         if lower < end, text[lower] == Unit.lessThan {
             var upper = lower + 1
             while upper < end, text[upper] != Unit.greaterThan { upper += 1 }
-            return TextRange((lower + 1)..<upper)
+            return MarkdownRange((lower + 1)..<upper)
         }
         var upper = lower
         while upper < end, text[upper] != Unit.space { upper += 1 }
-        return TextRange(lower..<upper)
+        return MarkdownRange(lower..<upper)
     }
 
     /// Matches `<scheme:...>` or `<name@example.com>` and returns the index of `>`.
@@ -185,7 +185,7 @@ enum InlineParser {
 
     // MARK: - Bare URLs
 
-    private static func parseBareURLs(_ text: MarkdownText, range: TextRange, claimed: inout [Bool], spans: inout [MarkdownSpan]) {
+    private static func parseBareURLs(_ text: MarkdownText, range: MarkdownRange, claimed: inout [Bool], spans: inout [MarkdownSpan]) {
         let start = range.location
         let end = range.upperBound
         var index = start
@@ -205,7 +205,7 @@ enum InlineParser {
             while urlEnd > index, isTrailingURLPunctuation(text[urlEnd - 1]) {
                 urlEnd -= 1
             }
-            let urlRange = TextRange(index..<urlEnd)
+            let urlRange = MarkdownRange(index..<urlEnd)
             guard urlRange.length > 8 else {
                 index = max(urlEnd, index + 1)
                 continue
@@ -234,7 +234,7 @@ enum InlineParser {
         var remaining: Int
     }
 
-    private static func parseEmphasis(_ text: MarkdownText, range: TextRange, claimed: [Bool], spans: inout [MarkdownSpan]) {
+    private static func parseEmphasis(_ text: MarkdownText, range: MarkdownRange, claimed: [Bool], spans: inout [MarkdownSpan]) {
         let start = range.location
         let end = range.upperBound
         var openers: [Delimiter] = []
@@ -290,9 +290,9 @@ enum InlineParser {
                 use = min(2, opener.remaining, closer.remaining)
             }
 
-            let openerMarker = TextRange(location: opener.position + opener.remaining - use, length: use)
-            let closerMarker = TextRange(location: closer.position + (closer.length - closer.remaining), length: use)
-            let content = TextRange(openerMarker.upperBound..<closerMarker.location)
+            let openerMarker = MarkdownRange(location: opener.position + opener.remaining - use, length: use)
+            let closerMarker = MarkdownRange(location: closer.position + (closer.length - closer.remaining), length: use)
+            let content = MarkdownRange(openerMarker.upperBound..<closerMarker.location)
 
             let kind: SpanKind
             if closer.unit == Unit.tilde {

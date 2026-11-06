@@ -18,7 +18,7 @@ Ink effects (animated ink, candlelight, etc.) are explicitly **out of scope** fo
 
 `Packages/ParchmentCore` (Foundation-free, 63 passing tests, builds on Linux with `/opt/swift/usr/bin/swift`):
 
-- `MarkdownText` (UTF-16 snapshot), `TextRange` (UTF-16, like `NSRange`)
+- `MarkdownText` (UTF-16 snapshot), `MarkdownRange` (UTF-16, like `NSRange`)
 - `MarkdownParser.lines(in:) -> [MarkdownLine]` and `MarkdownParser.spans(for:in:) -> [MarkdownSpan]`
 - `MarkdownLine`: `range`, `fullRange` (incl. line break), `kind: LineKind`, `contentStart`, `prefixRange`, `contentRange`, `blockPosition: BlockPosition`
 - `LineKind`: blank, paragraph, heading(level), fence(language,isOpening), code(language), quote, listItem(isOrdered), task(isChecked), rule, tableHeader, tableDelimiter, tableRow, image(source)
@@ -190,7 +190,7 @@ final class ParchmentTextView: NSTextView {
     var isFocusMode: Bool               // dims all but the current paragraph via temporary attributes
     var isTypewriterMode: Bool          // keeps the caret line vertically centered
     func perform(_ command: EditorCommand)
-    func reveal(_ range: TextRange)     // select start of range, scroll it to the upper third
+    func reveal(_ range: MarkdownRange)     // select start of range, scroll it to the upper third
     func apply(_ edit: TextEdit)
 }
 

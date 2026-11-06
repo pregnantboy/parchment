@@ -3,12 +3,12 @@
 /// Editing commands return one of these instead of mutating anything, so they are easy to
 /// test and the app can apply them through `NSTextView` to get undo for free.
 public struct TextEdit: Hashable, Sendable {
-    public var range: TextRange
+    public var range: MarkdownRange
     public var replacement: String
     /// The selection after the edit, in the coordinates of the edited text.
-    public var selection: TextRange
+    public var selection: MarkdownRange
 
-    public init(range: TextRange, replacement: String, selection: TextRange) {
+    public init(range: MarkdownRange, replacement: String, selection: MarkdownRange) {
         self.range = range
         self.replacement = replacement
         self.selection = selection

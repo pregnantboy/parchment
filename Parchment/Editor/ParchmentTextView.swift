@@ -141,7 +141,7 @@ final class ParchmentTextView: NSTextView {
     }
 
     /// Puts the caret at the start of `range` and scrolls it to the upper third of the window.
-    func reveal(_ range: TextRange) {
+    func reveal(_ range: MarkdownRange) {
         guard let storage = textStorage else { return }
         let location = min(max(0, range.location), storage.length)
         setSelectedRange(NSRange(location: location, length: 0))
@@ -227,9 +227,9 @@ final class ParchmentTextView: NSTextView {
         return MarkdownText(string)
     }
 
-    private var currentSelection: TextRange {
+    private var currentSelection: MarkdownRange {
         let range = selectedRange()
-        return TextRange(location: range.location, length: range.length)
+        return MarkdownRange(location: range.location, length: range.length)
     }
 
     // MARK: - Mouse
@@ -566,7 +566,7 @@ nonisolated private struct FocusState: Equatable {
 }
 
 private extension NSRange {
-    init(_ textRange: TextRange) {
+    init(_ textRange: MarkdownRange) {
         self.init(location: textRange.location, length: textRange.length)
     }
 }

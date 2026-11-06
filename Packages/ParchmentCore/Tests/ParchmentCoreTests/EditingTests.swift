@@ -4,7 +4,7 @@ import Testing
 /// Editing tests use `|` to mark the caret, or `«` and `»` to mark a selection.
 @Suite("Markdown editing")
 struct EditingTests {
-    private func parse(_ marked: String) -> (MarkdownText, TextRange) {
+    private func parse(_ marked: String) -> (MarkdownText, MarkdownRange) {
         var units: [UInt16] = []
         var start: Int?
         var end: Int?
@@ -17,7 +17,7 @@ struct EditingTests {
             }
         }
         let lower = start ?? units.count
-        return (MarkdownText(units: units), TextRange(location: lower, length: (end ?? lower) - lower))
+        return (MarkdownText(units: units), MarkdownRange(location: lower, length: (end ?? lower) - lower))
     }
 
     private func render(_ edit: TextEdit?, on text: MarkdownText) -> String? {
@@ -33,7 +33,7 @@ struct EditingTests {
         return String(decoding: units, as: UTF16.self)
     }
 
-    private func apply(_ marked: String, _ command: (MarkdownText, TextRange) -> TextEdit?) -> String? {
+    private func apply(_ marked: String, _ command: (MarkdownText, MarkdownRange) -> TextEdit?) -> String? {
         let (text, selection) = parse(marked)
         return render(command(text, selection), on: text)
     }
@@ -145,7 +145,7 @@ struct EditingTests {
         for _ in 0..<3 {
             let (parsed, selection) = parse(text)
             text = render(AutoPair.insert("`", in: parsed, selection: selection), on: parsed)
-                ?? render(TextEdit(range: selection, replacement: "`", selection: TextRange(location: selection.location + 1, length: 0)), on: parsed)!
+                ?? render(TextEdit(range: selection, replacement: "`", selection: MarkdownRange(location: selection.location + 1, length: 0)), on: parsed)!
         }
         #expect(text == "```|")
     }
@@ -156,7 +156,7 @@ struct EditingTests {
         let open = AutoPair.insert("[", in: text, selection: selection)!
         text = MarkdownText(open.applied(to: text)); selection = open.selection
         text = MarkdownText(TextEdit(range: selection, replacement: " ", selection: selection).applied(to: text))
-        selection = TextRange(location: selection.location + 1, length: 0)
+        selection = MarkdownRange(location: selection.location + 1, length: 0)
         let close = AutoPair.insert("]", in: text, selection: selection)!
         #expect(render(close, on: text) == "- [ ]|")
     }

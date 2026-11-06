@@ -22,7 +22,7 @@ public enum AutoPair {
     private static let closers: Set<UInt16> = [Unit.closeParen, Unit.closeBracket, Unit.closeBrace, Unit.backtick]
 
     /// The edit for typing `typed`, or `nil` to insert it normally.
-    public static func insert(_ typed: String, in text: MarkdownText, selection: TextRange) -> TextEdit? {
+    public static func insert(_ typed: String, in text: MarkdownText, selection: MarkdownRange) -> TextEdit? {
         let typedUnits = Array(typed.utf16)
         guard typedUnits.count == 1, let unit = typedUnits.first else { return nil }
 
@@ -33,7 +33,7 @@ public enum AutoPair {
             return TextEdit(
                 range: selection,
                 replacement: typed + inner + closing,
-                selection: TextRange(location: selection.location + 1, length: selection.length)
+                selection: MarkdownRange(location: selection.location + 1, length: selection.length)
             )
         }
 
@@ -43,7 +43,7 @@ public enum AutoPair {
 
         // Type over a closer that is already there.
         if closers.contains(unit), next == unit {
-            return TextEdit(range: TextRange(location: caret, length: 1), replacement: typed, selection: TextRange(location: caret + 1, length: 0))
+            return TextEdit(range: MarkdownRange(location: caret, length: 1), replacement: typed, selection: MarkdownRange(location: caret + 1, length: 0))
         }
 
         guard let close = pairs[unit] else { return nil }
@@ -55,19 +55,19 @@ public enum AutoPair {
         }
 
         let replacement = typed + String(decoding: [close], as: UTF16.self)
-        return TextEdit(range: selection, replacement: replacement, selection: TextRange(location: caret + 1, length: 0))
+        return TextEdit(range: selection, replacement: replacement, selection: MarkdownRange(location: caret + 1, length: 0))
     }
 
     /// Deletes both halves of an empty pair, like `(|)`, on Backspace.
-    public static func deleteBackward(in text: MarkdownText, selection: TextRange) -> TextEdit? {
+    public static func deleteBackward(in text: MarkdownText, selection: MarkdownRange) -> TextEdit? {
         guard selection.isEmpty, selection.location > 0,
               let previous = text.unit(at: selection.location - 1),
               let next = text.unit(at: selection.location),
               let close = pairs[previous], close == next else { return nil }
         return TextEdit(
-            range: TextRange(location: selection.location - 1, length: 2),
+            range: MarkdownRange(location: selection.location - 1, length: 2),
             replacement: "",
-            selection: TextRange(location: selection.location - 1, length: 0)
+            selection: MarkdownRange(location: selection.location - 1, length: 0)
         )
     }
 }

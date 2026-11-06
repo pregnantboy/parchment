@@ -6,7 +6,7 @@ struct CodeHighlighterTests {
     private func tokens(_ code: String, language: String) -> [(CodeTokenKind, String)] {
         let text = MarkdownText(code)
         var spans: [MarkdownSpan] = []
-        CodeHighlighter.highlight(text, range: TextRange(location: 0, length: text.length), language: language, into: &spans)
+        CodeHighlighter.highlight(text, range: MarkdownRange(location: 0, length: text.length), language: language, into: &spans)
         return spans.compactMap { span in
             guard case .codeToken(let kind) = span.kind else { return nil }
             return (kind, text.string(in: span.range))

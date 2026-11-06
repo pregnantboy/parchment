@@ -89,14 +89,14 @@ struct BlockParserTests {
         let lines = MarkdownParser.lines(in: MarkdownText("a\r\n\nb"))
         #expect(lines.map(\.kind) == [.paragraph, .blank, .paragraph])
         #expect(lines.map(\.lineBreakLength) == [2, 1, 0])
-        #expect(lines[0].range == TextRange(location: 0, length: 1))
-        #expect(lines[2].range == TextRange(location: 4, length: 1))
+        #expect(lines[0].range == MarkdownRange(location: 0, length: 1))
+        #expect(lines[2].range == MarkdownRange(location: 4, length: 1))
     }
 
     @Test func trailingNewlineMakesAnEmptyLastLine() {
         let lines = MarkdownParser.lines(in: MarkdownText("a\n"))
         #expect(lines.count == 2)
-        #expect(lines[1].range == TextRange(location: 2, length: 0))
+        #expect(lines[1].range == MarkdownRange(location: 2, length: 0))
     }
 
     @Test func blockPositionsGroupRelatedLines() {

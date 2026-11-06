@@ -5,7 +5,7 @@ struct Fence: Hashable, Sendable {
     var language: String
 
     /// Reads an opening fence such as ```` ```swift ```` or `~~~`.
-    static func opening(in text: MarkdownText, line: TextRange) -> Fence? {
+    static func opening(in text: MarkdownText, line: MarkdownRange) -> Fence? {
         let end = line.upperBound
         var index = line.location
         while index < end, index - line.location <= 3, text[index] == Unit.space {
@@ -33,12 +33,12 @@ struct Fence: Hashable, Sendable {
         while infoEnd < end, text[infoEnd] != Unit.space, text[infoEnd] != Unit.tab, text[infoEnd] != Unit.openBrace {
             infoEnd += 1
         }
-        let language = text.string(in: TextRange(index..<infoEnd)).lowercased()
+        let language = text.string(in: MarkdownRange(index..<infoEnd)).lowercased()
         return Fence(marker: marker, length: length, language: language)
     }
 
     /// True when `line` closes this fence: the same marker, at least as long, and nothing after it.
-    func isClosed(by text: MarkdownText, line: TextRange) -> Bool {
+    func isClosed(by text: MarkdownText, line: MarkdownRange) -> Bool {
         let end = line.upperBound
         var index = line.location
         while index < end, index - line.location <= 3, text[index] == Unit.space {

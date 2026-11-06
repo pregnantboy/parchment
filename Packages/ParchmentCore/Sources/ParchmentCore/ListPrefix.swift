@@ -7,12 +7,12 @@ public struct ListPrefix: Hashable, Sendable {
     }
 
     /// The whitespace before the marker.
-    public var indent: TextRange
+    public var indent: MarkdownRange
     public var marker: Marker
     /// The marker and the spaces after it, such as `- ` or `12. `.
-    public var markerRange: TextRange
+    public var markerRange: MarkdownRange
     /// The `[ ]` or `[x]` of a task item.
-    public var taskBox: TextRange?
+    public var taskBox: MarkdownRange?
     public var isChecked: Bool
     /// Where the item's own text starts.
     public var contentStart: Int
@@ -34,14 +34,14 @@ public struct ListPrefix: Hashable, Sendable {
     }
 
     /// Reads the list or quote syntax at the start of `line`, if there is any.
-    public static func parse(_ text: MarkdownText, line: TextRange) -> ListPrefix? {
+    public static func parse(_ text: MarkdownText, line: MarkdownRange) -> ListPrefix? {
         let end = line.upperBound
         var index = line.location
         while index < end, text[index] == Unit.space || text[index] == Unit.tab {
             index += 1
         }
         guard index < end else { return nil }
-        let indent = TextRange(location: line.location, length: index - line.location)
+        let indent = MarkdownRange(location: line.location, length: index - line.location)
         let first = text[index]
 
         if first == Unit.greaterThan {
@@ -51,7 +51,7 @@ public struct ListPrefix: Hashable, Sendable {
             return ListPrefix(
                 indent: indent,
                 marker: .quote,
-                markerRange: TextRange(location: index, length: contentStart - index),
+                markerRange: MarkdownRange(location: index, length: contentStart - index),
                 taskBox: nil,
                 isChecked: false,
                 contentStart: contentStart
@@ -82,9 +82,9 @@ public struct ListPrefix: Hashable, Sendable {
         while contentStart < end, contentStart - afterMarker < 4, text[contentStart] == Unit.space || text[contentStart] == Unit.tab {
             contentStart += 1
         }
-        let markerRange = TextRange(location: index, length: contentStart - index)
+        let markerRange = MarkdownRange(location: index, length: contentStart - index)
 
-        var taskBox: TextRange?
+        var taskBox: MarkdownRange?
         var isChecked = false
         if contentStart + 2 < end,
            text[contentStart] == Unit.openBracket,
@@ -93,7 +93,7 @@ public struct ListPrefix: Hashable, Sendable {
             let afterBox = contentStart + 3
             let boxIsTerminated = afterBox >= end || text[afterBox] == Unit.space || text[afterBox] == Unit.tab
             if boxIsTerminated, mark == Unit.space || mark == Unit.lowerX || mark == Unit.upperX {
-                taskBox = TextRange(location: contentStart, length: 3)
+                taskBox = MarkdownRange(location: contentStart, length: 3)
                 isChecked = mark != Unit.space
                 contentStart = afterBox
                 while contentStart < end, text[contentStart] == Unit.space || text[contentStart] == Unit.tab {

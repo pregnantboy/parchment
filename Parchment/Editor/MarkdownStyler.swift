@@ -596,7 +596,7 @@ nonisolated private struct WidthKey: Hashable {
 }
 
 private extension NSRange {
-    init(_ textRange: TextRange) {
+    init(_ textRange: MarkdownRange) {
         self.init(location: textRange.location, length: textRange.length)
     }
 }

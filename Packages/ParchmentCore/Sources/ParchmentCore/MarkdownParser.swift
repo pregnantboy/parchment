@@ -25,7 +25,7 @@ public enum MarkdownParser {
                 contentEnd -= 1
                 breakLength += 1
             }
-            let range = TextRange(location: lineStart, length: contentEnd - lineStart)
+            let range = MarkdownRange(location: lineStart, length: contentEnd - lineStart)
 
             if let fence = openFence {
                 if fence.isClosed(by: text, line: range) {
@@ -70,10 +70,10 @@ public enum MarkdownParser {
             let hashesEnd = index
             while index > line.contentStart, text[index - 1] == Unit.hash { index -= 1 }
             if index < hashesEnd, index > line.contentStart, text[index - 1] == Unit.space {
-                spans.append(MarkdownSpan(.syntax, TextRange(index..<hashesEnd)))
+                spans.append(MarkdownSpan(.syntax, MarkdownRange(index..<hashesEnd)))
                 contentEnd = index
             }
-            InlineParser.parse(text, range: TextRange(line.contentStart..<max(line.contentStart, contentEnd)), into: &spans)
+            InlineParser.parse(text, range: MarkdownRange(line.contentStart..<max(line.contentStart, contentEnd)), into: &spans)
 
         case .fence, .rule, .tableDelimiter, .image:
             if !line.range.isEmpty {
@@ -110,7 +110,7 @@ public enum MarkdownParser {
             InlineParser.parse(text, range: line.contentRange, into: &spans)
             for index in line.range.range where text[index] == Unit.pipe {
                 if index > line.range.location, text[index - 1] == Unit.backslash { continue }
-                spans.append(MarkdownSpan(.syntax, TextRange(location: index, length: 1)))
+                spans.append(MarkdownSpan(.syntax, MarkdownRange(location: index, length: 1)))
             }
         }
         return spans
@@ -118,7 +118,7 @@ public enum MarkdownParser {
 
     // MARK: - Line classification
 
-    private static func classify(_ text: MarkdownText, line: TextRange) -> (LineKind, Int) {
+    private static func classify(_ text: MarkdownText, line: MarkdownRange) -> (LineKind, Int) {
         let end = line.upperBound
         var index = line.location
         var columns = 0
@@ -224,7 +224,7 @@ public enum MarkdownParser {
             while sourceEnd < sourceLimit, text[sourceEnd] != Unit.space { sourceEnd += 1 }
         }
         guard sourceEnd > sourceStart else { return nil }
-        return text.string(in: TextRange(sourceStart..<sourceEnd))
+        return text.string(in: MarkdownRange(sourceStart..<sourceEnd))
     }
 
     // MARK: - Context passes
@@ -253,11 +253,11 @@ public enum MarkdownParser {
         }
     }
 
-    private static func contains(_ unit: UInt16, in range: TextRange, text: MarkdownText) -> Bool {
+    private static func contains(_ unit: UInt16, in range: MarkdownRange, text: MarkdownText) -> Bool {
         range.range.contains { text[$0] == unit }
     }
 
-    private static func isTableDelimiter(_ text: MarkdownText, line: TextRange) -> Bool {
+    private static func isTableDelimiter(_ text: MarkdownText, line: MarkdownRange) -> Bool {
         var sawPipe = false
         var sawHyphen = false
         for index in line.range {

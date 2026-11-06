@@ -22,7 +22,7 @@ public struct MarkdownText: Sendable, Equatable {
         index >= 0 && index < units.count ? units[index] : nil
     }
 
-    public func string(in range: TextRange) -> String {
+    public func string(in range: MarkdownRange) -> String {
         String(decoding: units[range.location..<range.upperBound], as: UTF16.self)
     }
 
@@ -37,7 +37,7 @@ public struct MarkdownText: Sendable, Equatable {
     }
 
     /// The range of the line containing `index`, excluding its line break.
-    public func lineRange(containing index: Int) -> TextRange {
+    public func lineRange(containing index: Int) -> MarkdownRange {
         var start = min(max(index, 0), units.count)
         while start > 0, units[start - 1] != Unit.newline {
             start -= 1
@@ -49,19 +49,19 @@ public struct MarkdownText: Sendable, Equatable {
         if end > start, units[end - 1] == Unit.carriageReturn {
             end -= 1
         }
-        return TextRange(location: start, length: end - start)
+        return MarkdownRange(location: start, length: end - start)
     }
 
     /// The ranges of every line touched by `selection`, excluding line breaks.
     ///
     /// A selection that ends exactly at the start of a line does not include that line,
     /// matching how editors treat a fully selected line.
-    public func lineRanges(touching selection: TextRange) -> [TextRange] {
+    public func lineRanges(touching selection: MarkdownRange) -> [MarkdownRange] {
         var end = selection.upperBound
         if selection.length > 0, unit(at: end - 1) == Unit.newline {
             end -= 1
         }
-        var ranges: [TextRange] = []
+        var ranges: [MarkdownRange] = []
         var line = lineRange(containing: selection.location)
         while true {
             ranges.append(line)
@@ -71,7 +71,7 @@ public struct MarkdownText: Sendable, Equatable {
         return ranges
     }
 
-    private func nextLineStart(after line: TextRange) -> Int? {
+    private func nextLineStart(after line: MarkdownRange) -> Int? {
         var index = line.upperBound
         if index < units.count, units[index] == Unit.carriageReturn { index += 1 }
         guard index < units.count, units[index] == Unit.newline else { return nil }

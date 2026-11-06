@@ -1,6 +1,6 @@
 /// A change at a fixed point within one line, such as adding `## ` or removing an indent.
 struct LineOperation {
-    var line: TextRange
+    var line: MarkdownRange
     /// Offset from the start of the line.
     var offset: Int
     var deleteCount: Int
@@ -9,7 +9,7 @@ struct LineOperation {
     var start: Int { line.location + offset }
 
     /// Combines operations on separate lines into one edit, mapping the selection through them.
-    static func edit(applying operations: [LineOperation], to text: MarkdownText, selection: TextRange) -> TextEdit? {
+    static func edit(applying operations: [LineOperation], to text: MarkdownText, selection: MarkdownRange) -> TextEdit? {
         guard let first = operations.first, let last = operations.last else { return nil }
         let blockStart = first.line.location
         let blockEnd = last.line.upperBound
@@ -39,9 +39,9 @@ struct LineOperation {
         let lower = map(selection.location)
         let upper = map(selection.upperBound)
         return TextEdit(
-            range: TextRange(blockStart..<blockEnd),
+            range: MarkdownRange(blockStart..<blockEnd),
             replacement: String(decoding: replacement, as: UTF16.self),
-            selection: TextRange(location: lower, length: max(0, upper - lower))
+            selection: MarkdownRange(location: lower, length: max(0, upper - lower))
         )
     }
 }

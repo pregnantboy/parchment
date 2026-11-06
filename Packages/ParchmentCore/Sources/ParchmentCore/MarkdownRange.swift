@@ -2,7 +2,7 @@
 ///
 /// The core package uses its own type so it stays free of Foundation and behaves
 /// identically on every platform.
-public struct TextRange: Hashable, Sendable, CustomStringConvertible {
+public struct MarkdownRange: Hashable, Sendable, CustomStringConvertible {
     public var location: Int
     public var length: Int
 
@@ -24,7 +24,7 @@ public struct TextRange: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// True when the ranges overlap, or when an empty range sits inside or at the edge of the other.
-    public func touches(_ other: TextRange) -> Bool {
+    public func touches(_ other: MarkdownRange) -> Bool {
         other.location <= upperBound && location <= other.upperBound
     }
 

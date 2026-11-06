@@ -63,10 +63,10 @@ struct DocumentTests {
 
     @Test func lineRangesTouchingASelection() {
         let text = MarkdownText("one\ntwo\nthree")
-        #expect(text.lineRanges(touching: TextRange(location: 1, length: 0)).count == 1)
-        #expect(text.lineRanges(touching: TextRange(location: 1, length: 5)).count == 2)
+        #expect(text.lineRanges(touching: MarkdownRange(location: 1, length: 0)).count == 1)
+        #expect(text.lineRanges(touching: MarkdownRange(location: 1, length: 5)).count == 2)
         // A selection ending right after a line break doesn't include the next line.
-        #expect(text.lineRanges(touching: TextRange(location: 0, length: 4)).count == 1)
-        #expect(text.lineRanges(touching: TextRange(location: 0, length: 13)).count == 3)
+        #expect(text.lineRanges(touching: MarkdownRange(location: 0, length: 4)).count == 1)
+        #expect(text.lineRanges(touching: MarkdownRange(location: 0, length: 13)).count == 3)
     }
 }

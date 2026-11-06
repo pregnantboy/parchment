@@ -3,7 +3,7 @@
 /// Highlighting is per line: a block comment or string that spans lines is only coloured on
 /// the line where it starts. That trade-off keeps restyling instant while typing.
 enum CodeHighlighter {
-    static func highlight(_ text: MarkdownText, range: TextRange, language name: String, into spans: inout [MarkdownSpan]) {
+    static func highlight(_ text: MarkdownText, range: MarkdownRange, language name: String, into spans: inout [MarkdownSpan]) {
         let language = CodeLanguage.named(name)
         if language.isMarkup {
             highlightMarkup(text, range: range, language: language, into: &spans)
@@ -17,21 +17,21 @@ enum CodeHighlighter {
 
             if let comment = language.lineComments.first(where: { text.matches($0, at: index) }),
                startsComment(comment, text: text, at: index, lineStart: range.location, end: end, language: language) {
-                spans.append(MarkdownSpan(.codeToken(.comment), TextRange(index..<end)))
+                spans.append(MarkdownSpan(.codeToken(.comment), MarkdownRange(index..<end)))
                 return
             }
 
             if let block = language.blockComment, text.matches(block.open, at: index) {
                 let closeStart = find(block.close, in: text, from: index + block.open.utf16.count, to: end)
                 let commentEnd = closeStart.map { $0 + block.close.utf16.count } ?? end
-                spans.append(MarkdownSpan(.codeToken(.comment), TextRange(index..<commentEnd)))
+                spans.append(MarkdownSpan(.codeToken(.comment), MarkdownRange(index..<commentEnd)))
                 index = commentEnd
                 continue
             }
 
             if language.stringDelimiters.contains(unit) {
                 let stringEnd = endOfString(text, delimiter: unit, from: index + 1, to: end)
-                spans.append(MarkdownSpan(.codeToken(.string), TextRange(index..<stringEnd)))
+                spans.append(MarkdownSpan(.codeToken(.string), MarkdownRange(index..<stringEnd)))
                 index = stringEnd
                 continue
             }
@@ -43,7 +43,7 @@ enum CodeHighlighter {
                     if text[numberEnd] == Unit.period, numberEnd + 1 < end, text[numberEnd + 1] == Unit.period { break }
                     numberEnd += 1
                 }
-                spans.append(MarkdownSpan(.codeToken(.number), TextRange(index..<numberEnd)))
+                spans.append(MarkdownSpan(.codeToken(.number), MarkdownRange(index..<numberEnd)))
                 index = numberEnd
                 continue
             }
@@ -51,7 +51,7 @@ enum CodeHighlighter {
             if Unit.isIdentifierStart(unit) || unit == Unit.hash {
                 var wordEnd = index + 1
                 while wordEnd < end, Unit.isIdentifierPart(text[wordEnd]) { wordEnd += 1 }
-                let wordRange = TextRange(index..<wordEnd)
+                let wordRange = MarkdownRange(index..<wordEnd)
                 let word = text.string(in: wordRange)
                 if language.keywords.contains(word) {
                     spans.append(MarkdownSpan(.codeToken(.keyword), wordRange))
@@ -73,7 +73,7 @@ enum CodeHighlighter {
         if index > lineStart, !Unit.isWhitespace(text[index - 1]) { return false }
         var wordEnd = index + 1
         while wordEnd < end, Unit.isIdentifierPart(text[wordEnd]) { wordEnd += 1 }
-        let directive = text.string(in: TextRange(index..<wordEnd))
+        let directive = text.string(in: MarkdownRange(index..<wordEnd))
         return !language.keywords.contains(directive)
     }
 
@@ -101,7 +101,7 @@ enum CodeHighlighter {
     }
 
     /// Colours tag names as keywords, attribute values as strings, and `<!-- -->` as comments.
-    private static func highlightMarkup(_ text: MarkdownText, range: TextRange, language: CodeLanguage, into spans: inout [MarkdownSpan]) {
+    private static func highlightMarkup(_ text: MarkdownText, range: MarkdownRange, language: CodeLanguage, into spans: inout [MarkdownSpan]) {
         let end = range.upperBound
         var index = range.location
         var insideTag = false
@@ -110,7 +110,7 @@ enum CodeHighlighter {
             if text.matches("<!--", at: index) {
                 let close = find("-->", in: text, from: index + 4, to: end)
                 let commentEnd = close.map { $0 + 3 } ?? end
-                spans.append(MarkdownSpan(.codeToken(.comment), TextRange(index..<commentEnd)))
+                spans.append(MarkdownSpan(.codeToken(.comment), MarkdownRange(index..<commentEnd)))
                 index = commentEnd
                 continue
             }
@@ -125,7 +125,7 @@ enum CodeHighlighter {
                     nameEnd += 1
                 }
                 if nameEnd > nameStart {
-                    spans.append(MarkdownSpan(.codeToken(.keyword), TextRange(nameStart..<nameEnd)))
+                    spans.append(MarkdownSpan(.codeToken(.keyword), MarkdownRange(nameStart..<nameEnd)))
                 }
                 index = nameEnd
                 continue
@@ -134,13 +134,13 @@ enum CodeHighlighter {
                 insideTag = false
             } else if insideTag, language.stringDelimiters.contains(unit) {
                 let stringEnd = endOfString(text, delimiter: unit, from: index + 1, to: end)
-                spans.append(MarkdownSpan(.codeToken(.string), TextRange(index..<stringEnd)))
+                spans.append(MarkdownSpan(.codeToken(.string), MarkdownRange(index..<stringEnd)))
                 index = stringEnd
                 continue
             } else if insideTag, Unit.isASCIILetter(unit) {
                 var nameEnd = index + 1
                 while nameEnd < end, Unit.isIdentifierPart(text[nameEnd]) || text[nameEnd] == Unit.hyphen { nameEnd += 1 }
-                spans.append(MarkdownSpan(.codeToken(.type), TextRange(index..<nameEnd)))
+                spans.append(MarkdownSpan(.codeToken(.type), MarkdownRange(index..<nameEnd)))
                 index = nameEnd
                 continue
             }
