@@ -308,13 +308,26 @@ Push, watch the GitHub Actions build, fix compile errors with minimal changes un
 
 - [x] ParchmentCore package + tests
 - [x] Mockups approved (Ink)
-- [ ] WS-A Project, document, CI
-- [ ] WS-B Theme
-- [ ] WS-C Editor engine
-- [ ] WS-D Window, menus, outline
+- [x] WS-A Project, document, CI
+- [x] WS-B Theme
+- [x] WS-C Editor engine
+- [x] WS-D Window, menus, outline
 - [ ] WS-E CI green
 - [ ] Review pass
 
 ## Resume from here
 
-Run WS-A to WS-D in parallel (they only share the interfaces above), then WS-E.
+WS-A to WS-D are written and committed; none of the app code has been compiled yet.
+Next: WS-E. Check the latest GitHub Actions "Build" run on branch `claude/funny-hypatia-6hw2n3`
+(workflow `.github/workflows/build.yml`, runner `macos-26`; if that label is unavailable switch to
+`macos-latest`). Download or read the job log, then have an Opus subagent fix compile errors with minimal
+changes, push, and repeat until green. Then run a review pass. Known loose ends from the agents' reports:
+- WS-C's "least sure to compile" list: nonisolated `MarkdownLayoutManager` under default MainActor isolation,
+  `MainActor.assumeIsolated` inside NotificationCenter closures, `NSAttributedString.Key.tracking`,
+  `NSImage.draw(... hints:)` key spelling, `perform(_:)` overload next to `NSObject.perform(_:)`.
+- WS-D's list: `.toolbar(removing: .title)`, `.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)`,
+  `@Bindable` shadowing in `DocumentWindowView`, `Toggle` + `@AppStorage` inside `Commands`.
+- Engine never calls `EditorController.caretDidMove(to:)`; the outline's current-heading highlight falls back to
+  the text view's selection. Wiring it from `textViewDidChangeSelection` is a small follow-up.
+- An image on the very last line without a trailing newline is not shown (no paragraph spacing to reserve).
+- ⌘= may not trigger "Bigger" (only ⌘+ is bound).
