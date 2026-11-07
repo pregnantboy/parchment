@@ -2,6 +2,13 @@
 
 Parchment is a native Markdown editor for the Mac. It edits one pane of plain text and styles it live as you type: the Markdown symbols stay visible but fade back, so headings, lists, quotes, code and tables read like a finished page. It opens and saves ordinary `.md` files, supports several windows, and follows your light or dark appearance.
 
+It is set in an old-style book serif. A reading mode (⇧⌘R) hides the Markdown symbols and locks the text, while checkboxes stay clickable and links open with a click. When the window is wide enough, the outline sits in a panel on the left.
+
+Two effects give it a storybook feel, and each can be switched off in Parchment > Settings:
+
+- **Ink bleed**: new letters land as wet ink and settle (off while Reduce Motion is on).
+- **Ornaments**: wax-seal checkboxes, filigree rules, a large first letter, a decorative quote mark and diamond bullets.
+
 ## Requirements
 
 - macOS 26 or later
@@ -58,7 +65,8 @@ The tag sets the version the app reports (here 1.0.0). The newest release is alw
 | Outdent | ⌘[ |
 | Focus mode | ⇧⌘F |
 | Typewriter mode | ⇧⌘T |
-| Show outline | ⇧⌘O |
+| Reading mode | ⇧⌘R |
+| Show or hide outline | ⇧⌘O |
 | Bigger text | ⌘+ |
 | Smaller text | ⌘− |
 | Actual size | ⌥⌘0 |

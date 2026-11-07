@@ -4,12 +4,14 @@ import ParchmentCore
 /// Word count and reading time, shown at the bottom center of the window.
 struct StatusPill: View {
     let controller: EditorController
+    /// Adds a small scroll before the count.
+    let ornaments: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         content
-            .font(.system(size: 12))
+            .font(.system(size: 12, design: .serif))
             .foregroundStyle(Color.parchmentPaper)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
@@ -32,6 +34,12 @@ struct StatusPill: View {
                 .fontWeight(.semibold)
         } else {
             HStack(spacing: 8) {
+                if ornaments {
+                    Image(systemName: controller.isReading ? "book" : "scroll")
+                        .imageScale(.small)
+                        .opacity(0.8)
+                        .accessibilityHidden(true)
+                }
                 Text(wordsText(controller.stats.words))
                     .fontWeight(.semibold)
                 Text("\(controller.stats.readingMinutes.formatted()) min read")

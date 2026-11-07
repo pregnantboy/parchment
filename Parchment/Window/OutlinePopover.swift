@@ -8,7 +8,7 @@ struct OutlinePopover: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Outline")
-                    .font(.headline)
+                    .font(.system(.headline, design: .serif))
                 Spacer()
                 Text("\u{21E7}\u{2318}O")
                     .font(.caption)

@@ -31,13 +31,13 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     // MARK: - Lifecycle
 
-    func makeScrollView(fileURL: URL?, isFocusMode: Bool, isTypewriterMode: Bool, undoManager: UndoManager?) -> NSScrollView {
+    func makeScrollView(from view: EditorView, undoManager: UndoManager?) -> NSScrollView {
         documentUndoManager = undoManager
 
         let textView = ParchmentTextView.makeEditor()
         textView.styler = styler
         styler.textView = textView
-        styler.documentURL = fileURL
+        styler.documentURL = view.fileURL
         textView.metrics = styler.metrics
 
         let scrollView = NSScrollView()
@@ -49,9 +49,13 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         scrollView.backgroundColor = Palette.paper
         scrollView.documentView = textView
 
+        // Set before loading, so the first styling pass already includes them.
+        textView.ornaments = view.ornaments
+        textView.isReading = view.isReading
+        textView.inkEffect = view.inkEffect
         textView.loadText(document.text)
-        textView.isFocusMode = isFocusMode
-        textView.isTypewriterMode = isTypewriterMode
+        textView.isFocusMode = view.isFocusMode
+        textView.isTypewriterMode = view.isTypewriterMode
         textView.delegate = self
         self.textView = textView
 
@@ -94,6 +98,15 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         if textView.isTypewriterMode != view.isTypewriterMode {
             textView.isTypewriterMode = view.isTypewriterMode
         }
+        if textView.ornaments != view.ornaments {
+            textView.ornaments = view.ornaments
+        }
+        if textView.isReading != view.isReading {
+            textView.isReading = view.isReading
+        }
+        if textView.inkEffect != view.inkEffect {
+            textView.inkEffect = view.inkEffect
+        }
     }
 
     func tearDown() {
@@ -132,6 +145,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         guard let textView, let scrollView = textView.enclosingScrollView else { return }
         textView.visibleRegionDidChange()
         reportScrollProgress(of: scrollView, documentHeight: textView.frame.height)
+        controller.visibleTopDidChange(to: textView.topVisibleCharacterIndex())
     }
 
     private func reportScrollProgress(of scrollView: NSScrollView, documentHeight: CGFloat) {

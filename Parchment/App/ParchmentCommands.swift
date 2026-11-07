@@ -6,6 +6,22 @@ struct ParchmentCommands: Commands {
     @AppStorage(PreferenceKey.focusMode) private var isFocusMode = false
     @AppStorage(PreferenceKey.typewriterMode) private var isTypewriterMode = false
 
+    @AppStorage(PreferenceKey.showsOutlineSidebar) private var showsOutlineSidebar = true
+
+    private var isReading: Binding<Bool> {
+        Binding(
+            get: { editor?.isReading ?? false },
+            set: { editor?.isReading = $0 }
+        )
+    }
+
+    private var outlineTitle: String {
+        if editor?.isOutlineSidebarAvailable == true, showsOutlineSidebar {
+            return "Hide Outline"
+        }
+        return "Show Outline"
+    }
+
     var body: some Commands {
         CommandMenu("Format") {
             Group {
@@ -48,15 +64,18 @@ struct ParchmentCommands: Commands {
             Button("Outdent") { editor?.perform(.outdent) }
                 .keyboardShortcut("[", modifiers: .command)
             }
-            .disabled(editor == nil)
+            .disabled(editor == nil || editor?.isReading == true)
         }
 
         CommandGroup(after: .toolbar) {
+            Toggle("Reading Mode", isOn: isReading)
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(editor == nil)
             Toggle("Focus Mode", isOn: $isFocusMode)
                 .keyboardShortcut("f", modifiers: [.command, .shift])
             Toggle("Typewriter Mode", isOn: $isTypewriterMode)
                 .keyboardShortcut("t", modifiers: [.command, .shift])
-            Button("Show Outline") { editor?.isShowingOutline.toggle() }
+            Button(outlineTitle) { editor?.toggleOutline() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 .disabled(editor == nil)
 

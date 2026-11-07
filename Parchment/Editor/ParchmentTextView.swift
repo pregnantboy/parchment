@@ -1,8 +1,9 @@
 import AppKit
 import ParchmentCore
+import QuartzCore
 
 /// The editor's text view: TextKit 1, a centered column with a hanging gutter, Markdown-aware
-/// keys, clickable task circles, focus dimming, and typewriter scrolling.
+/// keys, clickable task circles, focus dimming, typewriter scrolling, reading mode, and wet ink.
 final class ParchmentTextView: NSTextView {
     /// Type metrics. Setting it recomputes the column and restyles the whole document.
     var metrics = EditorMetrics(fontSize: EditorMetrics.defaultFontSize) {
@@ -32,6 +33,36 @@ final class ParchmentTextView: NSTextView {
         }
     }
 
+    /// Read-only, with Markdown symbols hidden. Task circles stay clickable and links open
+    /// with a plain click.
+    var isReading = false {
+        didSet {
+            guard isReading != oldValue else { return }
+            isEditable = !isReading
+            styler?.isReading = isReading
+            markdownLayoutManager?.isReading = isReading
+            stopInk()
+            restyleEverything()
+        }
+    }
+
+    /// Wax seals, filigree rules, a raised initial, a large quote mark and diamond bullets.
+    var ornaments = false {
+        didSet {
+            guard ornaments != oldValue else { return }
+            styler?.ornaments = ornaments
+            markdownLayoutManager?.ornaments = ornaments
+            restyleEverything()
+        }
+    }
+
+    /// New letters land as wet ink and dry over `InkDrop.duration`.
+    var inkEffect = false {
+        didSet {
+            if !inkEffect { stopInk() }
+        }
+    }
+
     /// Set by the coordinator, which owns it.
     weak var styler: MarkdownStyler?
 
@@ -58,6 +89,10 @@ final class ParchmentTextView: NSTextView {
     private static let imageTopGap: CGFloat = 12
     private static let imageRadius: CGFloat = 12
     private static let tapSlop: CGFloat = 6
+    /// The most drops kept drying at once; fast typists never notice the cap.
+    private static let maxInkDrops = 48
+
+    private var inkDisplayLink: CADisplayLink?
 
     // MARK: - Construction
 
@@ -126,6 +161,20 @@ final class ParchmentTextView: NSTextView {
 
     private var markdownLayoutManager: MarkdownLayoutManager? {
         layoutManager as? MarkdownLayoutManager
+    }
+
+    /// Restyles the whole document and rebuilds its glyphs, for switches that change which
+    /// characters are hidden or decorated.
+    private func restyleEverything() {
+        guard let storage = textStorage, let styler else { return }
+        styler.restyle(storage, full: true)
+        defaultParagraphStyle = styler.bodyParagraphStyle
+        let all = NSRange(location: 0, length: storage.length)
+        layoutManager?.invalidateGlyphs(forCharacterRange: all, changeInLength: 0, actualCharacterRange: nil)
+        layoutManager?.invalidateLayout(forCharacterRange: all, actualCharacterRange: nil)
+        lastFocusState = nil
+        refreshFocusDimming()
+        needsDisplay = true
     }
 
     // MARK: - Public surface
@@ -217,6 +266,20 @@ final class ParchmentTextView: NSTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        let wasComposing = hasMarkedText()
+        let start = selectedRange().location
+        insertTyping(string, replacementRange: replacementRange)
+
+        // Typed letters (not pasted text or input method commits) land as wet ink.
+        let typed = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
+        let count = typed.utf16.count
+        if !wasComposing, !hasMarkedText(), replacementRange.location == NSNotFound,
+           count > 0, count <= 4, typed.contains(where: { !$0.isWhitespace }) {
+            addInkDrop(NSRange(location: start, length: count))
+        }
+    }
+
+    private func insertTyping(_ string: Any, replacementRange: NSRange) {
         guard !hasMarkedText(),
               replacementRange.location == NSNotFound,
               selectedRanges.count == 1,
@@ -227,6 +290,15 @@ final class ParchmentTextView: NSTextView {
             return
         }
         apply(edit)
+    }
+
+    /// Keeps drying ink on the right characters when text before it changes.
+    override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        guard super.shouldChangeText(in: affectedCharRange, replacementString: replacementString) else { return false }
+        if let replacementString {
+            shiftInkDrops(around: affectedCharRange, replacementLength: replacementString.utf16.count)
+        }
+        return true
     }
 
     /// The styler's last parse when it matches the storage, which it does after every change;
@@ -251,11 +323,15 @@ final class ParchmentTextView: NSTextView {
         // While an input method is composing, the styler's parse is stale; let super commit first.
         if !hasMarkedText(), let boxLocation = taskBoxLocation(at: point) {
             if let edit = MarkdownEditing.toggleTaskBox(at: boxLocation, in: currentMarkdownText(), selection: currentSelection) {
+                // Reading mode is read-only except for ticking tasks, so allow this one edit.
+                let wasEditable = isEditable
+                isEditable = true
                 apply(edit, revealSelection: false)
+                isEditable = wasEditable
             }
             return
         }
-        if event.modifierFlags.contains(.command), let destination = linkDestination(at: point) {
+        if isReading || event.modifierFlags.contains(.command), let destination = linkDestination(at: point) {
             openLink(destination)
             return
         }
@@ -333,7 +409,10 @@ final class ParchmentTextView: NSTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window else { return }
+        guard let window else {
+            stopInk()
+            return
+        }
         updateGeometry(forceRestyle: false)
         if !hasBecomeFirstResponder {
             hasBecomeFirstResponder = true
@@ -519,6 +598,89 @@ final class ParchmentTextView: NSTextView {
         refreshFocusDimming()
     }
 
+    // MARK: - Wet ink
+
+    private func addInkDrop(_ range: NSRange) {
+        guard inkEffect, !isReading, let layoutManager = markdownLayoutManager,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let storage = textStorage, NSMaxRange(range) <= storage.length else { return }
+        layoutManager.inkDrops.append(InkDrop(range: range, start: ProcessInfo.processInfo.systemUptime))
+        if layoutManager.inkDrops.count > Self.maxInkDrops {
+            layoutManager.inkDrops.removeFirst(layoutManager.inkDrops.count - Self.maxInkDrops)
+        }
+        if inkDisplayLink == nil {
+            let link = displayLink(target: self, selector: #selector(inkFrame(_:)))
+            link.add(to: .main, forMode: .common)
+            inkDisplayLink = link
+        }
+    }
+
+    /// Redraws drying ink each frame, and stops once every drop has dried.
+    @objc private func inkFrame(_ link: CADisplayLink) {
+        guard let layoutManager = markdownLayoutManager else {
+            stopInk()
+            return
+        }
+        for drop in layoutManager.inkDrops {
+            if let rect = inkRect(for: drop.range) {
+                setNeedsDisplay(rect)
+            }
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        // Expired drops were just invalidated above, so their final, dry frame still draws.
+        layoutManager.inkDrops.removeAll { now - $0.start >= InkDrop.duration }
+        if layoutManager.inkDrops.isEmpty {
+            link.invalidate()
+            inkDisplayLink = nil
+        }
+    }
+
+    private func stopInk() {
+        inkDisplayLink?.invalidate()
+        inkDisplayLink = nil
+        if let layoutManager = markdownLayoutManager, !layoutManager.inkDrops.isEmpty {
+            layoutManager.inkDrops.removeAll()
+            needsDisplay = true
+        }
+    }
+
+    /// The area a drop draws in, including its halo, in view coordinates.
+    private func inkRect(for range: NSRange) -> NSRect? {
+        guard let layoutManager, let textContainer, let storage = textStorage,
+              range.length > 0, NSMaxRange(range) <= storage.length else { return nil }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return nil }
+        let origin = textContainerOrigin
+        return layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            .offsetBy(dx: origin.x, dy: origin.y)
+            .insetBy(dx: -24, dy: -16)
+    }
+
+    /// Moves drops after an edit by its change in length and drops any the edit touched.
+    private func shiftInkDrops(around edited: NSRange, replacementLength: Int) {
+        guard let layoutManager = markdownLayoutManager, !layoutManager.inkDrops.isEmpty else { return }
+        let delta = replacementLength - edited.length
+        layoutManager.inkDrops = layoutManager.inkDrops.compactMap { drop in
+            var drop = drop
+            if drop.range.location >= NSMaxRange(edited) {
+                drop.range.location += delta
+            } else if NSMaxRange(drop.range) > edited.location {
+                return nil
+            }
+            return drop
+        }
+    }
+
+    /// The character at the top of the visible text, below any toolbar.
+    func topVisibleCharacterIndex() -> Int? {
+        guard let layoutManager, let textContainer, let storage = textStorage, storage.length > 0 else { return nil }
+        let origin = textContainerOrigin
+        let insetTop = enclosingScrollView?.contentInsets.top ?? 0
+        let point = NSPoint(x: CGFloat(effectiveGutter) + 1, y: visibleRect.minY + insetTop + 12 - origin.y)
+        let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
+        return min(layoutManager.characterIndexForGlyph(at: glyph), storage.length)
+    }
+
     // MARK: - Typewriter
 
     private func centerCaretIfNeeded() {
@@ -585,9 +747,10 @@ final class ParchmentTextView: NSTextView {
         if current.length > 0 {
             layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: current)
         }
-        // Task boxes are drawn as circles; their transparent glyphs must stay transparent.
-        storage.enumerateAttribute(.parchmentTaskBox, in: visible, options: []) { value, range, _ in
-            if value != nil {
+        // Transparent glyphs (task boxes drawn as circles, markers hidden in reading mode)
+        // must stay transparent.
+        storage.enumerateAttribute(.foregroundColor, in: visible, options: []) { value, range, _ in
+            if let color = value as? NSColor, color.alphaComponent == 0 {
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
             }
         }

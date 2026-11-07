@@ -1,14 +1,32 @@
 import AppKit
 
 /// Draws the decorations that make the Ink look: code block backgrounds, inline code pills,
-/// quote bars, rule lines, task circles, and inline images.
+/// quote bars, rule lines, task circles, bullets, inline images, and wet ink.
+///
+/// It is its own delegate, to hide the glyphs of Markdown symbols in reading mode.
 ///
 /// `NSLayoutManager` is not main-actor isolated, so this class is `nonisolated` and its drawing
 /// reads only the text storage's attributes, `Palette`, `BlockDecoration`, `FontBook`, and its
-/// own `gutter`, which the text view sets on the main actor before drawing.
-nonisolated final class MarkdownLayoutManager: NSLayoutManager {
+/// own settings, which the text view sets on the main actor before drawing.
+nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// The hanging gutter width, in container coordinates. Code backgrounds and quote bars align to it.
     var gutter: CGFloat = 64
+    /// Reading mode: rules span the whole measure, since their `---` is transparent.
+    var isReading = false
+    /// Wax-seal tasks, filigree rules, diamond bullets and a large quote mark.
+    var ornaments = false
+    /// Recently typed text still drying. The text view adds and expires drops.
+    var inkDrops: [InkDrop] = []
+
+    override init() {
+        super.init()
+        delegate = self
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        delegate = self
+    }
 
     /// Horizontal padding inside an inline code pill. The styler kerns the characters around
     /// the code by the same amount so the pill has room.
@@ -29,6 +47,77 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         drawDecorations(forGlyphRange: glyphsToShow, at: origin)
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        drawWetInk(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    // MARK: - Hidden syntax
+
+    /// Gives characters marked `parchmentHidden` null glyphs, which take no room and draw nothing.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+        properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+        characterIndexes charIndexes: UnsafePointer<Int>,
+        font aFont: NSFont,
+        forGlyphRange glyphRange: NSRange
+    ) -> Int {
+        guard let storage = layoutManager.textStorage, glyphRange.length > 0 else { return 0 }
+        let count = glyphRange.length
+        let first = charIndexes[0]
+        let last = charIndexes[count - 1]
+        guard first >= 0, last < storage.length, last >= first else { return 0 }
+
+        var hasHidden = false
+        storage.enumerateAttribute(.parchmentHidden, in: NSRange(location: first, length: last - first + 1), options: []) { value, _, stop in
+            if value != nil {
+                hasHidden = true
+                stop.pointee = true
+            }
+        }
+        guard hasHidden else { return 0 }
+
+        var properties = Array(UnsafeBufferPointer(start: props, count: count))
+        for index in 0..<count where storage.attribute(.parchmentHidden, at: charIndexes[index], effectiveRange: nil) != nil {
+            properties[index] = .null
+        }
+        properties.withUnsafeBufferPointer { buffer in
+            if let base = buffer.baseAddress {
+                layoutManager.setGlyphs(glyphs, properties: base, characterIndexes: charIndexes, font: aFont, forGlyphRange: glyphRange)
+            }
+        }
+        return count
+    }
+
+    // MARK: - Wet ink
+
+    /// Redraws drying text with a soft halo and extra density that fade as it dries, so a
+    /// letter lands dark and blurred and settles into its crisp printed form.
+    private func drawWetInk(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard !inkDrops.isEmpty, let storage = textStorage,
+              let context = NSGraphicsContext.current?.cgContext else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        for drop in inkDrops {
+            let progress = (now - drop.start) / InkDrop.duration
+            guard progress >= 0, progress < 1, drop.range.length > 0,
+                  NSMaxRange(drop.range) <= storage.length else { continue }
+            let glyphs = NSIntersectionRange(glyphRange(forCharacterRange: drop.range, actualCharacterRange: nil), glyphsToShow)
+            guard glyphs.length > 0 else { continue }
+
+            let wetness = (1 - progress) * (1 - progress)
+            let font = (storage.attribute(.font, at: drop.range.location, effectiveRange: nil) as? NSFont) ?? FontBook.shared.text(size: 18)
+            let color = (storage.attribute(.foregroundColor, at: drop.range.location, effectiveRange: nil) as? NSColor) ?? Palette.ink
+            guard color.alphaComponent > 0 else { continue }
+
+            context.saveGState()
+            context.setAlpha(CGFloat(0.6 * wetness))
+            context.setShadow(offset: .zero, blur: font.pointSize * 0.4 * CGFloat(wetness), color: color.withAlphaComponent(0.9).cgColor)
+            super.drawGlyphs(forGlyphRange: glyphs, at: origin)
+            context.restoreGState()
+        }
     }
 
     private func drawDecorations(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
@@ -65,6 +154,12 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
             if attributes[.parchmentRule] != nil {
                 self.drawRule(line, font: font, baseline: baseline, origin: origin, in: context)
             }
+            if self.ornaments, line.startsLine, let raw = attributes[.parchmentBlock] as? NSNumber {
+                let decoration = BlockDecoration(rawValue: raw.intValue)
+                if decoration.contains(.quote), decoration.contains(.isFirst) {
+                    self.drawQuoteMark(line, font: font, origin: origin)
+                }
+            }
             if line.endsWithBreak, let image = attributes[.parchmentImage] as? NSImage,
                let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle {
                 self.drawImage(image, line: line, paragraph: paragraph, origin: origin, in: context)
@@ -76,6 +171,10 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
             storage.enumerateAttribute(.parchmentTaskBox, in: charRange, options: []) { value, boxRange, _ in
                 guard let isChecked = (value as? NSNumber)?.boolValue else { return }
                 self.drawTaskCircle(boxRange: boxRange, isChecked: isChecked, fragmentRect: rect, container: container, origin: origin, in: context)
+            }
+            storage.enumerateAttribute(.parchmentBullet, in: charRange, options: []) { value, bulletRange, _ in
+                guard value != nil else { return }
+                self.drawBullet(bulletRange, fragmentRect: rect, container: container, origin: origin, in: context)
             }
         }
     }
@@ -192,14 +291,70 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
     // MARK: - Rules
 
     /// A hairline from just after the faint `---` to the right edge of the measure, at the
-    /// height of the hyphens.
+    /// height of the hyphens. In reading mode the `---` is transparent, so the line starts at
+    /// the text edge. With ornaments, a filigree centered on the measure takes its place.
     private func drawRule(_ line: LineFragment, font: NSFont, baseline: CGFloat, origin: NSPoint, in context: CGContext) {
-        let startX = origin.x + line.usedRect.maxX + Self.ruleGap
+        let textEdge = origin.x + gutter
+        let startX = isReading ? textEdge : origin.x + line.usedRect.maxX + Self.ruleGap
         let endX = origin.x + line.containerWidth
         guard endX > startX else { return }
         let midY = origin.y + baseline - font.xHeight / 2
-        Palette.rule.setFill()
-        context.fill(CGRect(x: startX, y: (midY - 0.5).rounded(), width: endX - startX, height: 1))
+
+        guard ornaments else {
+            Palette.rule.setFill()
+            context.fill(CGRect(x: startX, y: (midY - 0.5).rounded(), width: endX - startX, height: 1))
+            return
+        }
+        // Centered on the measure, as wide as it can be without reaching the `---`.
+        let center = (textEdge + endX) / 2
+        let halfWidth = min(center - startX, (endX - textEdge) * 0.32)
+        guard halfWidth > 12 else { return }
+        let height = max(6, font.pointSize * 0.42)
+        let rect = CGRect(x: center - halfWidth, y: midY - height / 2, width: halfWidth * 2, height: height)
+        context.saveGState()
+        Palette.accent.withAlphaComponent(0.75).setFill()
+        context.addPath(OrnamentPath.flourish(in: rect))
+        context.fillPath()
+        context.restoreGState()
+    }
+
+    // MARK: - Ornaments
+
+    /// A large, faint opening quote mark behind the start of a quote block.
+    private func drawQuoteMark(_ line: LineFragment, font: NSFont, origin: NSPoint) {
+        let markFont = FontBook.shared.text(size: Double(font.pointSize) * 3.4, weight: .bold)
+        let mark = NSAttributedString(string: "\u{201C}", attributes: [
+            .font: markFont,
+            .foregroundColor: Palette.accent.withAlphaComponent(0.16),
+        ])
+        let point = NSPoint(
+            x: origin.x + gutter + Self.quoteBarWidth + 2,
+            y: origin.y + line.rect.minY - markFont.pointSize * 0.22
+        )
+        mark.draw(at: point)
+    }
+
+    /// A dot, or a small accent diamond with ornaments, centered on a transparent bullet marker.
+    private func drawBullet(_ range: NSRange, fragmentRect: CGRect, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
+        guard let storage = textStorage, NSMaxRange(range) <= storage.length else { return }
+        let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return }
+        let bounds = boundingRect(forGlyphRange: glyphs, in: container)
+        let font = (storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont) ?? FontBook.shared.text(size: 18)
+        let baseline = fragmentRect.minY + location(forGlyphAt: glyphs.location).y
+        let center = CGPoint(x: origin.x + bounds.midX, y: origin.y + baseline - font.xHeight / 2)
+
+        context.saveGState()
+        if ornaments {
+            Palette.accent.setFill()
+            context.addPath(OrnamentPath.diamond(center: center, radius: max(2.5, font.pointSize * 0.2)))
+            context.fillPath()
+        } else {
+            Palette.muted.setFill()
+            let radius = max(2, font.pointSize * 0.13)
+            context.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+        }
+        context.restoreGState()
     }
 
     // MARK: - Tasks
@@ -220,7 +375,9 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
         let scale = font.pointSize / 18
 
         context.saveGState()
-        if isChecked {
+        if ornaments {
+            drawWaxSeal(in: circle, isChecked: isChecked, scale: scale, context: context)
+        } else if isChecked {
             Palette.accent.setFill()
             context.fillEllipse(in: circle)
 
@@ -239,6 +396,42 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
             context.strokeEllipse(in: circle.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
         }
         context.restoreGState()
+    }
+
+    /// Checked: a poured wax seal with a pressed ring and a pale gold check. Unchecked: the
+    /// faint outline of where a seal will go.
+    private func drawWaxSeal(in circle: CGRect, isChecked: Bool, scale: CGFloat, context: CGContext) {
+        let center = CGPoint(x: circle.midX, y: circle.midY)
+        let radius = circle.width / 2
+        guard isChecked else {
+            let lineWidth = max(1.2, 1.5 * scale)
+            Palette.muted.setStroke()
+            context.setLineWidth(lineWidth)
+            context.addPath(OrnamentPath.waxSeal(center: center, radius: radius - lineWidth / 2))
+            context.strokePath()
+            context.setLineDash(phase: 0, lengths: [1.5 * scale, 2 * scale])
+            context.setLineWidth(max(0.8, scale))
+            context.strokeEllipse(in: circle.insetBy(dx: radius * 0.32, dy: radius * 0.32))
+            return
+        }
+
+        Palette.wax.setFill()
+        context.addPath(OrnamentPath.waxSeal(center: center, radius: radius * 1.05))
+        context.fillPath()
+
+        Palette.waxShade.setStroke()
+        context.setLineWidth(max(0.8, scale))
+        context.strokeEllipse(in: circle.insetBy(dx: radius * 0.24, dy: radius * 0.24))
+
+        Palette.waxMark.setStroke()
+        context.setLineWidth(max(1.3, 1.7 * scale))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        let diameter = circle.width
+        context.move(to: CGPoint(x: circle.minX + diameter * 0.32, y: circle.minY + diameter * 0.52))
+        context.addLine(to: CGPoint(x: circle.minX + diameter * 0.45, y: circle.minY + diameter * 0.65))
+        context.addLine(to: CGPoint(x: circle.minX + diameter * 0.69, y: circle.minY + diameter * 0.38))
+        context.strokePath()
     }
 
     // MARK: - Images
@@ -277,6 +470,16 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
         let corner = max(0, min(radius, rect.width / 2, rect.height / 2))
         return CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil)
     }
+}
+
+/// Text typed moments ago, still drying.
+nonisolated struct InkDrop: Sendable {
+    /// How long ink takes to dry, in seconds.
+    static let duration: TimeInterval = 0.7
+
+    var range: NSRange
+    /// `ProcessInfo.systemUptime` when the text was typed.
+    var start: TimeInterval
 }
 
 /// One line fragment being decorated, in container coordinates.

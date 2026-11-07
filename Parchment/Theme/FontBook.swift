@@ -1,6 +1,8 @@
 import AppKit
 
 /// A thread-safe font cache. The layout manager asks for fonts off the main actor.
+///
+/// `text` fonts are an old-style serif; `mono` fonts are SF Mono.
 nonisolated final class FontBook: @unchecked Sendable {
     static let shared = FontBook()
 
@@ -40,15 +42,39 @@ nonisolated final class FontBook: @unchecked Sendable {
         if let cached = cache[key] { return cached }
 
         let pointSize = Double(key.halfPoints) / 2
-        let upright = mono
-            ? NSFont.monospacedSystemFont(ofSize: pointSize, weight: weight)
-            : NSFont.systemFont(ofSize: pointSize, weight: weight)
-        var result = upright
-        if italic {
-            let descriptor = upright.fontDescriptor.withSymbolicTraits(.italic)
-            result = NSFont(descriptor: descriptor, size: pointSize) ?? upright
+        let result: NSFont
+        if mono {
+            let upright = NSFont.monospacedSystemFont(ofSize: pointSize, weight: weight)
+            if italic {
+                let descriptor = upright.fontDescriptor.withSymbolicTraits(.italic)
+                result = NSFont(descriptor: descriptor, size: pointSize) ?? upright
+            } else {
+                result = upright
+            }
+        } else {
+            result = Self.serif(size: pointSize, weight: weight, italic: italic)
         }
         cache[key] = result
         return result
+    }
+
+    /// Text is set in Iowan Old Style, a bookish serif that ships with macOS. It has Roman,
+    /// Bold and Black faces, so lighter weights use Roman, semibold and bold use Bold, and
+    /// heavier weights use Black. If it is missing, New York (the system serif) stands in.
+    private static func serif(size: Double, weight: NSFont.Weight, italic: Bool) -> NSFont {
+        let face: String = switch weight.rawValue {
+        case ..<0.29: italic ? "IowanOldStyle-Italic" : "IowanOldStyle-Roman"
+        case ..<0.5: italic ? "IowanOldStyle-BoldItalic" : "IowanOldStyle-Bold"
+        default: italic ? "IowanOldStyle-BlackItalic" : "IowanOldStyle-Black"
+        }
+        if let font = NSFont(name: face, size: size) {
+            return font
+        }
+        let system = NSFont.systemFont(ofSize: size, weight: weight)
+        var descriptor = system.fontDescriptor.withDesign(.serif) ?? system.fontDescriptor
+        if italic {
+            descriptor = descriptor.withSymbolicTraits(.italic)
+        }
+        return NSFont(descriptor: descriptor, size: size) ?? system
     }
 }

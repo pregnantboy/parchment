@@ -16,6 +16,11 @@ struct ParchmentApp: App {
         .commands {
             ParchmentCommands()
         }
-        .defaultSize(width: 980, height: 820)
+        // Wide enough for the outline panel beside the text at the default text size.
+        .defaultSize(width: 1180, height: 820)
+
+        Settings {
+            SettingsView()
+        }
     }
 }

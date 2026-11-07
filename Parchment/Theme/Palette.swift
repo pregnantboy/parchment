@@ -16,6 +16,13 @@ nonisolated enum Palette {
     static var codeText: NSColor { dynamic(light: 0xEDE6DA, dark: 0xEDE6DA) }
     static var codeFence: NSColor { dynamic(light: 0x6E6458, dark: 0x6E6458) }
     static var rule: NSColor { dynamic(light: 0xE5DCCD, dark: 0x2C2723) }
+    /// The outline sidebar, a shade deeper than the page.
+    static var sidebar: NSColor { dynamic(light: 0xF0E9DC, dark: 0x191715) }
+    /// Sealing wax for checked tasks, and its darker pressed ring.
+    static var wax: NSColor { dynamic(light: 0x9E2B25, dark: 0xB8382E) }
+    static var waxShade: NSColor { dynamic(light: 0x6E1A16, dark: 0x7C1F19) }
+    /// The pale gold check pressed into the wax.
+    static var waxMark: NSColor { dynamic(light: 0xF6E2B3, dark: 0xF6E2B3) }
 
     /// Accent at 11% alpha in light mode, 14% in dark mode.
     static var inlineCodeBackground: NSColor {

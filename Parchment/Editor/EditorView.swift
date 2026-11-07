@@ -8,6 +8,9 @@ struct EditorView: NSViewRepresentable {
     let fontSize: Double
     let isFocusMode: Bool
     let isTypewriterMode: Bool
+    let isReading: Bool
+    let ornaments: Bool
+    let inkEffect: Bool
 
     func makeCoordinator() -> EditorCoordinator {
         EditorCoordinator(
@@ -18,12 +21,7 @@ struct EditorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        context.coordinator.makeScrollView(
-            fileURL: fileURL,
-            isFocusMode: isFocusMode,
-            isTypewriterMode: isTypewriterMode,
-            undoManager: context.environment.undoManager
-        )
+        context.coordinator.makeScrollView(from: self, undoManager: context.environment.undoManager)
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
