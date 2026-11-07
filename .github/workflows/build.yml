@@ -46,10 +46,13 @@ jobs:
           ditto -c -k --keepParent build/Build/Products/Release/Parchment.app Parchment.zip
 
       - name: Upload app
-        uses: actions/upload-artifact@v4
+        # archive: false uploads Parchment.zip as-is. Without it, GitHub wraps the
+        # zip in a second zip, so people unzip once and find another zip.
+        # Keep the ditto zip above: it preserves the app's symlinks and signature.
+        uses: actions/upload-artifact@v7
         with:
-          name: Parchment-app
           path: Parchment.zip
+          archive: false
           retention-days: 14
 
       - name: Upload build log

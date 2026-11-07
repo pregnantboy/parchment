@@ -20,7 +20,7 @@ Then press ⌘R in Xcode.
 
 ## Download a build without Xcode
 
-Every push builds the app on GitHub. Open the repository's Actions tab, pick the latest green "Build" run, and download the `Parchment-app` artifact. Unzip it and move `Parchment.app` to Applications.
+Every push builds the app on GitHub. Open the repository's Actions tab, pick the latest green "Build" run, and download the `Parchment.zip` artifact. Double-click it to get `Parchment.app`, then move that to Applications.
 
 The app is not signed with an Apple developer certificate, so macOS blocks the first launch. Right-click the app and choose Open, then confirm. Or run:
 
