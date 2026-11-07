@@ -75,10 +75,16 @@ jobs:
         run: |
           # The asset keeps the plain name Parchment.zip, so this link always gets the newest:
           # https://github.com/<owner>/<repo>/releases/latest/download/Parchment.zip
-          gh release create "$GITHUB_REF_NAME" Parchment.zip \
-            --title "Parchment ${GITHUB_REF_NAME#v}" \
-            --generate-notes \
-            --verify-tag
+          # A release made by hand on GitHub (which also creates the tag) gets the zip
+          # attached; otherwise the release is created here.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" Parchment.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" Parchment.zip \
+              --title "Parchment ${GITHUB_REF_NAME#v}" \
+              --generate-notes \
+              --verify-tag
+          fi
 
       - name: Upload build log
         if: always()
