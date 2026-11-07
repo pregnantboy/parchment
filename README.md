@@ -42,6 +42,24 @@ git push origin v1.0.0
 
 The tag sets the version the app reports (here 1.0.0). The newest release is always at `releases/latest/download/Parchment.zip` in this repository.
 
+## Watching Claude Code plans
+
+Parchment can show the plan Claude Code is working on, live, when Claude Code runs in a terminal on the same Mac.
+
+1. Choose **Parchment > Connect to Claude Code…**. Parchment shows the hook it adds to `~/.claude/settings.json` and saves a backup next to it. Restart any Claude Code sessions that are already running.
+2. Work with Claude Code as usual. When it writes a plan (in plan mode, or any Markdown file in a `plans` folder or with "plan" in its name), Parchment opens it in the background, one window per session.
+
+While Claude works on the file, the window is read-only and shows:
+
+- **The status pill:** who is working (and how many helpers), what they are doing, and progress such as "6 of 9" (from checkboxes or Claude's todo list) or "Step 3 of 7" (a guess from where Claude is editing). It shimmers while Claude works and goes still on "Waiting for you", "Needs your permission", "Done", or "Last update 6 min ago".
+- **Recent actions** above the pill, such as "Edited StatusPill.swift ✓", fading after a few seconds.
+- **The progress line** at the top shows plan progress, with a glint while Claude works.
+- **In the text:** new text inks in, changed lines get a vermilion mark in the margin, Claude's caret shows where it last wrote, the current task's circle pulses, ticked boxes fill in, and steps a helper works on are tagged with its name.
+
+**View > Follow Claude** scrolls to each change (it pauses for a few seconds after you scroll). **View > Stop Following Claude** makes the window an ordinary editable document. The window also becomes editable when the session ends. Turning on Reduce Motion in System Settings stops all the animation.
+
+To undo the setup, choose **Parchment > Disconnect from Claude Code…**; it removes only Parchment's hook.
+
 ## Keyboard shortcuts
 
 | Action | Shortcut |
@@ -72,8 +90,10 @@ Parchment/                 App target
   Theme/                   Colors, fonts and layout metrics
   Editor/                  Text view, styling and drawing
   Window/                  Document window, status pill, outline
+  Agent/                   Following Claude Code: hook inbox, file watching, connect dialogs
   Resources/               Asset catalog
-Packages/ParchmentCore/    Markdown parsing and editing logic (Swift package)
+Packages/ParchmentCore/    Markdown parsing and editing logic, plus ParchmentAgent
+                           (Claude Code hook events, sessions, plan progress)
 project.yml                XcodeGen project spec
 docs/plans/                Implementation plan
 ```
