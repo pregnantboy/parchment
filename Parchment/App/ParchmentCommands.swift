@@ -5,6 +5,7 @@ struct ParchmentCommands: Commands {
     @AppStorage(PreferenceKey.fontSize) private var fontSize = EditorMetrics.defaultFontSize
     @AppStorage(PreferenceKey.focusMode) private var isFocusMode = false
     @AppStorage(PreferenceKey.typewriterMode) private var isTypewriterMode = false
+    @AppStorage(PreferenceKey.followClaude) private var followsClaude = true
 
     @AppStorage(PreferenceKey.showsOutlineSidebar) private var showsOutlineSidebar = true
 
@@ -23,6 +24,10 @@ struct ParchmentCommands: Commands {
     }
 
     var body: some Commands {
+        CommandGroup(after: .appSettings) {
+            ClaudeConnectionMenuItem()
+        }
+
         CommandMenu("Format") {
             Group {
             Button("Bold") { editor?.perform(.bold) }
@@ -81,6 +86,12 @@ struct ParchmentCommands: Commands {
 
             Divider()
 
+            Toggle("Follow Claude", isOn: $followsClaude)
+            Button("Stop Following Claude") { editor?.stopFollowingClaude() }
+                .disabled(editor?.isFollowedByClaude != true)
+
+            Divider()
+
             Button("Bigger") { fontSize = min(fontSize + 1, EditorMetrics.fontSizeRange.upperBound) }
                 .keyboardShortcut("+", modifiers: .command)
             // ⌘= without Shift, as in other Mac apps; hidden so the menu shows one Bigger item.
@@ -91,6 +102,17 @@ struct ParchmentCommands: Commands {
                 .keyboardShortcut("-", modifiers: .command)
             Button("Actual Size") { fontSize = EditorMetrics.defaultFontSize }
                 .keyboardShortcut("0", modifiers: [.command, .option])
+        }
+    }
+}
+
+/// "Connect to Claude Code…" or "Disconnect from Claude Code…", whichever applies.
+private struct ClaudeConnectionMenuItem: View {
+    var body: some View {
+        if AgentMonitor.shared.isConnected {
+            Button("Disconnect from Claude Code…") { ClaudeConnection.confirmDisconnect() }
+        } else {
+            Button("Connect to Claude Code…") { ClaudeConnection.confirmConnect() }
         }
     }
 }

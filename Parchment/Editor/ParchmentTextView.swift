@@ -38,12 +38,24 @@ final class ParchmentTextView: NSTextView {
     var isReading = false {
         didSet {
             guard isReading != oldValue else { return }
-            isEditable = !isReading
+            updateEditability()
             styler?.isReading = isReading
             markdownLayoutManager?.isReading = isReading
             stopInk()
             restyleEverything()
         }
+    }
+
+    /// Locked while Claude Code is working on this file. Unlike reading mode, task circles
+    /// can't be ticked either.
+    var isAgentReadOnly = false {
+        didSet {
+            if isAgentReadOnly != oldValue { updateEditability() }
+        }
+    }
+
+    private func updateEditability() {
+        isEditable = !isReading && !isAgentReadOnly
     }
 
     /// Wax seals, filigree rules, a raised initial, a large quote mark and diamond bullets.
@@ -66,11 +78,23 @@ final class ParchmentTextView: NSTextView {
     /// Set by the coordinator, which owns it.
     weak var styler: MarkdownStyler?
 
+    /// What Claude is doing in this file, or `nil` when no session follows it. Drives the
+    /// in-text effects in `AgentEffects.swift`.
+    var agentPresence: AgentPresence? {
+        didSet {
+            if agentPresence != oldValue { agentPresenceDidChange(from: oldValue) }
+        }
+    }
+    let agentEffects = AgentEffects()
+    var agentEffectsLink: CADisplayLink?
+    /// When the user last scrolled by hand. Following Claude pauses for a few seconds after.
+    var lastUserScroll = Date.distantPast
+
     /// TextKit 1 text views don't retain their storage, so the view keeps it alive itself.
     private var retainedStorage: NSTextStorage?
     private var lastGeometryWidth: CGFloat = -1
     private var lastVisibleHeight: CGFloat = -1
-    private var effectiveGutter: Double = 0
+    private(set) var effectiveGutter: Double = 0
     private var isUpdatingGeometry = false
     private var hasBecomeFirstResponder = false
     /// The ranges the last focus dimming pass used, to skip identical passes.
@@ -159,7 +183,36 @@ final class ParchmentTextView: NSTextView {
         refreshFocusDimming()
     }
 
-    private var markdownLayoutManager: MarkdownLayoutManager? {
+    /// Replaces the text with a newer version from disk, changing only the part that differs, so
+    /// the rest keeps its styling and the selection stays put. The edit bypasses undo (undo
+    /// history is cleared, since its ranges no longer match), so the document is not marked as edited.
+    /// Returns the change, or `nil` when the text is the same.
+    @discardableResult
+    func applyExternalText(_ string: String) -> TextChange? {
+        guard let storage = textStorage, !hasMarkedText() else { return nil }
+        let new = MarkdownText(string)
+        guard let change = TextChange.between(old: currentMarkdownText(), new: new) else { return nil }
+
+        let selection = selectedRange()
+        let replaced = storage.mutableString.substring(with: NSRange(change.oldRange))
+        undoManager?.removeAllActions()
+        storage.beginEditing()
+        storage.replaceCharacters(in: NSRange(change.oldRange), with: new.string(in: change.newRange))
+        storage.endEditing()
+
+        let start = change.map(selection.location)
+        let end = change.map(NSMaxRange(selection))
+        setSelectedRange(NSRange(location: start, length: max(0, end - start)))
+        styler?.restyle(storage, full: false)
+        lastFocusState = nil
+        refreshFocusDimming()
+        if agentPresence != nil {
+            agentDidChangeText(change, replaced: replaced)
+        }
+        return change
+    }
+
+    var markdownLayoutManager: MarkdownLayoutManager? {
         layoutManager as? MarkdownLayoutManager
     }
 
@@ -321,7 +374,7 @@ final class ParchmentTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         // While an input method is composing, the styler's parse is stale; let super commit first.
-        if !hasMarkedText(), let boxLocation = taskBoxLocation(at: point) {
+        if !hasMarkedText(), !isAgentReadOnly, let boxLocation = taskBoxLocation(at: point) {
             if let edit = MarkdownEditing.toggleTaskBox(at: boxLocation, in: currentMarkdownText(), selection: currentSelection) {
                 // Reading mode is read-only except for ticking tasks, so allow this one edit.
                 let wasEditable = isEditable
@@ -516,6 +569,12 @@ final class ParchmentTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawTrailingImage(in: dirtyRect)
+        drawAgentEffects(in: dirtyRect)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        lastUserScroll = Date()
+        super.scrollWheel(with: event)
     }
 
     /// The layout manager draws images in their line's paragraph spacing; the last line has
@@ -570,7 +629,7 @@ final class ParchmentTextView: NSTextView {
     }
 
     /// The scroll view's visible height, excluding content insets such as a toolbar.
-    private var visibleHeight: Double {
+    var visibleHeight: Double {
         guard let scrollView = enclosingScrollView else { return Double(visibleRect.height) }
         let insets = scrollView.contentInsets
         return Double(max(0, scrollView.contentView.bounds.height - insets.top - insets.bottom))
@@ -692,7 +751,7 @@ final class ParchmentTextView: NSTextView {
     }
 
     /// The used rect of the line holding `location`, in view coordinates.
-    private func lineRect(forCharacterAt location: Int) -> NSRect? {
+    func lineRect(forCharacterAt location: Int) -> NSRect? {
         guard let layoutManager, let storage = textStorage else { return nil }
         let origin = textContainerOrigin
         let length = storage.length
@@ -707,7 +766,7 @@ final class ParchmentTextView: NSTextView {
         return rect.offsetBy(dx: origin.x, dy: origin.y)
     }
 
-    private func scrollClip(toY y: CGFloat) {
+    func scrollClip(toY y: CGFloat, animated: Bool = false) {
         guard let scrollView = enclosingScrollView else { return }
         let clip = scrollView.contentView
         let insets = scrollView.contentInsets
@@ -715,7 +774,16 @@ final class ParchmentTextView: NSTextView {
         let maximum = max(minimum, frame.height - clip.bounds.height + insets.bottom)
         let target = min(max(y, minimum), maximum).rounded()
         guard abs(clip.bounds.origin.y - target) >= 0.5 else { return }
-        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: target))
+        let origin = NSPoint(x: clip.bounds.origin.x, y: target)
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.35
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                clip.animator().setBoundsOrigin(origin)
+            }
+        } else {
+            clip.scroll(to: origin)
+        }
         scrollView.reflectScrolledClipView(clip)
     }
 

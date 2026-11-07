@@ -5,6 +5,10 @@ struct EditorView: NSViewRepresentable {
     let document: MarkdownDocument
     let fileURL: URL?
     let controller: EditorController
+    /// True while Claude Code is working on this file.
+    let isReadOnly: Bool
+    /// What Claude is doing in this file, for the in-text effects. `nil` when no session follows it.
+    let agent: AgentPresence?
     let fontSize: Double
     let isFocusMode: Bool
     let isTypewriterMode: Bool

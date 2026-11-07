@@ -15,6 +15,8 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     private var documentUndoManager: UndoManager?
     private var observers: [any NSObjectProtocol] = []
     private var lastReportedProgress = -1.0
+    /// Watches the document's file so changes made by other programs (like Claude Code) show up.
+    private var fileWatcher: FileWatcher?
 
     init(document: MarkdownDocument, controller: EditorController, metrics: EditorMetrics) {
         self.document = document
@@ -54,6 +56,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         textView.isReading = view.isReading
         textView.inkEffect = view.inkEffect
         textView.loadText(document.text)
+        textView.isAgentReadOnly = view.isReadOnly
         textView.isFocusMode = view.isFocusMode
         textView.isTypewriterMode = view.isTypewriterMode
         textView.delegate = self
@@ -62,6 +65,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         controller.textView = textView
         controller.textDidChange(styler.text, lines: styler.lines)
         observe(scrollView.contentView)
+        watchFile(at: view.fileURL)
         return scrollView
     }
 
@@ -75,17 +79,31 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         controller.textView = textView
 
         if view.document !== document {
+            let isSameFile = view.fileURL != nil && view.fileURL == fileWatcher?.url
             document = view.document
-            // Undo actions recorded against the old text would apply to the wrong ranges.
-            textView.undoManager?.removeAllActions()
-            textView.loadText(document.text)
-            controller.textDidChange(styler.text, lines: styler.lines)
+            if isSameFile {
+                // The same file read again (Revert, or AppKit reloading it after an outside change):
+                // change only what differs.
+                applyExternalText(document.text)
+            } else {
+                // Undo actions recorded against the old text would apply to the wrong ranges.
+                textView.undoManager?.removeAllActions()
+                textView.loadText(document.text)
+                controller.textDidChange(styler.text, lines: styler.lines)
+            }
         } else if controllerChanged {
             controller.textDidChange(styler.text, lines: styler.lines)
         }
         if styler.documentURL != view.fileURL {
             styler.documentURL = view.fileURL
             styler.restyleImageLines(matching: nil)
+        }
+        watchFile(at: view.fileURL)
+        if textView.isAgentReadOnly != view.isReadOnly {
+            textView.isAgentReadOnly = view.isReadOnly
+        }
+        if textView.agentPresence != view.agent {
+            textView.agentPresence = view.agent
         }
 
         let metrics = Self.metrics(forFontSize: view.fontSize)
@@ -110,6 +128,9 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     func tearDown() {
+        textView?.stopAgentEffects()
+        fileWatcher?.stop()
+        fileWatcher = nil
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -119,6 +140,45 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
             if controller.textView === textView {
                 controller.textView = nil
             }
+        }
+    }
+
+    // MARK: - Changes on disk
+
+    private func watchFile(at url: URL?) {
+        guard url != fileWatcher?.url else { return }
+        fileWatcher?.stop()
+        fileWatcher = url.map { url in
+            FileWatcher(url: url) { [weak self] in
+                self?.fileDidChangeOnDisk()
+            }
+        }
+    }
+
+    /// Reloads the text from disk, unless the window has unsaved changes (those are never
+    /// overwritten; saving later shows AppKit's usual "changed by another application" choice).
+    private func fileDidChangeOnDisk() {
+        guard let url = fileWatcher?.url else { return }
+        let appDocument = NSDocumentController.shared.document(for: url)
+        guard appDocument?.isDocumentEdited != true,
+              let data = try? Data(contentsOf: url),
+              let string = String(data: data, encoding: .utf8) else { return }
+        applyExternalText(string)
+        // Tell AppKit the document matches the file now, so a later save doesn't warn that
+        // another application changed it.
+        if let appDocument, !appDocument.isDocumentEdited,
+           let date = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date {
+            appDocument.fileModificationDate = date
+        }
+    }
+
+    private func applyExternalText(_ string: String) {
+        guard let textView, let change = textView.applyExternalText(string) else { return }
+        document.text = textView.string
+        controller.textDidChange(styler.text, lines: styler.lines)
+        controller.externalTextDidChange(change)
+        if let scrollView = textView.enclosingScrollView {
+            reportScrollProgress(of: scrollView, documentHeight: textView.frame.height)
         }
     }
 

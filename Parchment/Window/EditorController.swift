@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import ParchmentAgent
 import ParchmentCore
 
 /// One per window. The editor engine reports text, selection and scroll changes here,
@@ -23,6 +24,13 @@ final class EditorController {
             if isOutlineSidebarAvailable { isShowingOutline = false }
         }
     }
+
+    /// The plan's steps, whatever its format (see `PlanSteps`).
+    private(set) var planSteps: [PlanStep] = []
+    /// The end of the last change another program (Claude) made to the file, in the current text.
+    private(set) var lastExternalEdit: Int?
+    /// The window's file, set by the window.
+    var fileURL: URL?
 
     private var caretLocation: Int?
     /// The heading at the top of the window, which reading mode highlights in the outline.
@@ -54,6 +62,11 @@ final class EditorController {
             guard !Task.isCancelled else { return }
             self?.flushPendingText()
         }
+    }
+
+    /// Called after the file changed on disk and the editor took over the change.
+    func externalTextDidChange(_ change: TextChange) {
+        lastExternalEdit = change.newRange.upperBound
     }
 
     func selectionDidChange(selectedText: String) {
@@ -109,6 +122,17 @@ final class EditorController {
         return headings.last { $0.range.location <= caret }?.id
     }
 
+    // MARK: Claude
+
+    var isFollowedByClaude: Bool {
+        AgentMonitor.shared.session(following: fileURL) != nil
+    }
+
+    func stopFollowingClaude() {
+        guard let fileURL else { return }
+        AgentMonitor.shared.stopFollowing(fileURL)
+    }
+
     // MARK: Private
 
     private func flushPendingText() {
@@ -117,6 +141,7 @@ final class EditorController {
         let string = String(decoding: text.units, as: UTF16.self)
         stats = DocumentStats(counting: string)
         headings = OutlineHeading.headings(in: pendingLines, text: text)
+        planSteps = PlanSteps.steps(in: pendingLines, text: text)
         pendingLines = []
         updateReadingHeading()
     }

@@ -28,6 +28,16 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         delegate = self
     }
 
+    // Claude effects, set by the text view on the main actor before drawing.
+
+    /// Line starts of the steps Claude is working on. Their open task circles turn vermilion and pulse.
+    var activeTaskLines: Set<Int> = []
+    /// 0...1: how far the current pulse ring has spread.
+    var taskPulse: CGFloat = 0
+    var animatesTasks = true
+    /// Task boxes Claude just ticked, by the location of their `[`, with fill progress 0...1.
+    var taskFills: [Int: CGFloat] = [:]
+
     /// Horizontal padding inside an inline code pill. The styler kerns the characters around
     /// the code by the same amount so the pill has room.
     static let inlineCodePadding: CGFloat = 4
@@ -373,14 +383,27 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         let center = CGPoint(x: origin.x + boxRect.midX, y: origin.y + baseline - font.capHeight / 2)
         let circle = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
         let scale = font.pointSize / 18
+        let lineStart = storage.mutableString.lineRange(for: NSRange(location: boxRange.location, length: 0)).location
+        let isActive = !isChecked && activeTaskLines.contains(lineStart)
 
         context.saveGState()
+        let fill = isChecked ? (taskFills[boxRange.location] ?? 1) : 0
         if ornaments {
-            drawWaxSeal(in: circle, isChecked: isChecked, scale: scale, context: context)
+            drawWaxSeal(in: circle, isChecked: isChecked, fill: fill, isActive: isActive, scale: scale, context: context)
         } else if isChecked {
+            // Claude just ticked it: the fill grows from the center, then the check appears.
+            if fill < 1 {
+                let lineWidth = max(1.5, 2 * scale)
+                Palette.ink.setStroke()
+                context.setLineWidth(lineWidth)
+                context.strokeEllipse(in: circle.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
+            }
+            let eased = 1 - (1 - fill) * (1 - fill)
+            let inset = diameter * (1 - eased) / 2
             Palette.accent.setFill()
-            context.fillEllipse(in: circle)
+            context.fillEllipse(in: circle.insetBy(dx: inset, dy: inset))
 
+            context.setAlpha(min(1, max(0, (fill - 0.5) * 2)))
             NSColor.white.setStroke()
             context.setLineWidth(max(1.5, 2 * scale))
             context.setLineCap(.round)
@@ -391,21 +414,32 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             context.strokePath()
         } else {
             let lineWidth = max(1.5, 2 * scale)
-            Palette.ink.setStroke()
+            (isActive ? Palette.accent : Palette.ink).setStroke()
             context.setLineWidth(lineWidth)
             context.strokeEllipse(in: circle.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
+        }
+        if isActive && animatesTasks {
+            // A ring that spreads out and fades, once per pulse.
+            let spread = 7 * scale * taskPulse
+            context.setLineDash(phase: 0, lengths: [])
+            Palette.accent.withAlphaComponent(0.55 * (1 - taskPulse)).setStroke()
+            context.setLineWidth(max(1, 1.5 * scale))
+            context.strokeEllipse(in: circle.insetBy(dx: -spread, dy: -spread))
         }
         context.restoreGState()
     }
 
     /// Checked: a poured wax seal with a pressed ring and a pale gold check. Unchecked: the
     /// faint outline of where a seal will go.
-    private func drawWaxSeal(in circle: CGRect, isChecked: Bool, scale: CGFloat, context: CGContext) {
+    /// `fill` (0...1) grows a seal Claude just ticked from the center; `isActive` marks a step
+    /// Claude is working on.
+    private func drawWaxSeal(in circle: CGRect, isChecked: Bool, fill: CGFloat, isActive: Bool, scale: CGFloat, context: CGContext) {
         let center = CGPoint(x: circle.midX, y: circle.midY)
-        let radius = circle.width / 2
+        let fullRadius = circle.width / 2
         guard isChecked else {
+            let radius = fullRadius
             let lineWidth = max(1.2, 1.5 * scale)
-            Palette.muted.setStroke()
+            (isActive ? Palette.accent : Palette.muted).setStroke()
             context.setLineWidth(lineWidth)
             context.addPath(OrnamentPath.waxSeal(center: center, radius: radius - lineWidth / 2))
             context.strokePath()
@@ -415,13 +449,17 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             return
         }
 
+        let eased = 1 - (1 - fill) * (1 - fill)
+        let radius = fullRadius * max(0.05, eased)
         Palette.wax.setFill()
         context.addPath(OrnamentPath.waxSeal(center: center, radius: radius * 1.05))
         context.fillPath()
 
+        context.setAlpha(min(1, max(0, (fill - 0.5) * 2)))
+
         Palette.waxShade.setStroke()
         context.setLineWidth(max(0.8, scale))
-        context.strokeEllipse(in: circle.insetBy(dx: radius * 0.24, dy: radius * 0.24))
+        context.strokeEllipse(in: circle.insetBy(dx: fullRadius * 0.24, dy: fullRadius * 0.24))
 
         Palette.waxMark.setStroke()
         context.setLineWidth(max(1.3, 1.7 * scale))

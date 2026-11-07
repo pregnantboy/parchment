@@ -9,4 +9,6 @@ enum PreferenceKey {
     static let ornaments = "ornaments"
     /// Whether the outline shows as a side panel when the window is wide enough. On by default.
     static let showsOutlineSidebar = "showsOutlineSidebar"
+    /// Scroll to each change Claude makes in a followed plan.
+    static let followClaude = "followClaude"
 }
