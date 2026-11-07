@@ -12,7 +12,7 @@ struct OutlineRow: View {
     var body: some View {
         Button(action: action) {
             Text(heading.title)
-                .font(.system(size: 13, weight: heading.level == 1 ? .semibold : .regular))
+                .font(.system(size: 13, weight: heading.level == 1 ? .semibold : .regular, design: .serif))
                 .foregroundStyle(titleColor)
                 .lineLimit(1)
                 .padding(.leading, Double(max(heading.level - 1, 0)) * 14)

@@ -25,6 +25,14 @@ final class MarkdownStyler {
     /// The document's location, used to resolve relative image and link paths.
     var documentURL: URL?
 
+    /// Reading mode: Markdown symbols are hidden (inline ones take no room, hanging ones turn
+    /// transparent so the text doesn't move). The text view restyles everything when it changes.
+    var isReading = false
+
+    /// Ornaments: the document's first paragraph opens with a large initial in accent color.
+    /// The text view restyles everything when it changes.
+    var ornaments = false
+
     /// The text view whose typing attributes and storage this styler manages.
     weak var textView: NSTextView?
 
@@ -37,6 +45,8 @@ final class MarkdownStyler {
     private var paragraphCache: [ParagraphKey: NSParagraphStyle] = [:]
     private var widthCache: [WidthKey: Double] = [:]
     private var pendingImages: Set<URL> = []
+    /// The index of the line that carries the raised initial, as of the last parse.
+    private var dropCapLine: Int?
 
     /// Space reserved above and below an inline image, in total.
     private static let imageVerticalPadding = 24.0
@@ -63,17 +73,37 @@ final class MarkdownStyler {
     func restyle(_ storage: NSTextStorage, full: Bool) {
         let newText = Self.snapshot(of: storage)
         let newLines = MarkdownParser.lines(in: newText)
-        let changed: Range<Int> = if full || lines.isEmpty {
+        let isFull = full || lines.isEmpty
+        let changed: Range<Int> = if isFull {
             0..<newLines.count
         } else {
             LineDiff.changedLines(old: text, oldLines: lines, new: newText, newLines: newLines)
         }
+        let oldLineCount = lines.count
         text = newText
         lines = newLines
 
         var indices = IndexSet(integersIn: changed)
-        if !full, let selection = textView?.selectedRange(), selection.location != NSNotFound {
+        if !isFull, let selection = textView?.selectedRange(), selection.location != NSNotFound {
             indices.formUnion(lineIndices(touching: selection))
+        }
+
+        // The raised initial moves when a paragraph appears above it or its own line stops
+        // being a paragraph, so both its old line and its new one are restyled.
+        let oldDropCap = dropCapLine
+        dropCapLine = ornaments ? Self.firstParagraphIndex(in: newLines) : nil
+        if !isFull {
+            if let old = oldDropCap {
+                indices.insert(old)
+                // Lines at or after the edit moved by the change in line count.
+                let shifted = old + newLines.count - oldLineCount
+                if old >= changed.lowerBound, shifted >= 0 {
+                    indices.insert(shifted)
+                }
+            }
+            if let new = dropCapLine {
+                indices.insert(new)
+            }
         }
         restyleLines(indices, in: storage)
         updateTypingAttributes()
@@ -133,8 +163,8 @@ final class MarkdownStyler {
     private func restyleLines(_ indices: IndexSet, in storage: NSTextStorage) {
         guard !indices.isEmpty else { return }
         storage.beginEditing()
-        for index in indices where index < lines.count {
-            style(lines[index], in: storage)
+        for index in indices where index >= 0 && index < lines.count {
+            style(lines[index], isDropCapLine: index == dropCapLine, in: storage)
         }
         storage.endEditing()
     }
@@ -177,7 +207,7 @@ final class MarkdownStyler {
 
     // MARK: - Line styles
 
-    private func style(_ line: MarkdownLine, in storage: NSTextStorage) {
+    private func style(_ line: MarkdownLine, isDropCapLine: Bool, in storage: NSTextStorage) {
         let fullRange = NSRange(line.fullRange)
         guard fullRange.length > 0, NSMaxRange(fullRange) <= storage.length else { return }
         let body = FontBook.shared.text(size: metrics.fontSize)
@@ -199,7 +229,8 @@ final class MarkdownStyler {
             styleQuote(line, in: storage)
 
         case .fence:
-            styleCode(line, color: Palette.codeFence, in: storage)
+            // Reading mode keeps the fence lines as padding inside the block, but blank.
+            styleCode(line, color: isReading ? .clear : Palette.codeFence, in: storage)
 
         case .code:
             styleCode(line, color: Palette.codeText, in: storage)
@@ -208,7 +239,7 @@ final class MarkdownStyler {
             styleTable(line, in: storage)
 
         case .rule:
-            storage.setAttributes(attributes(font: body, color: Palette.marker, paragraph: bodyParagraph(spacingAfter: metrics.paragraphSpacing)), range: fullRange)
+            storage.setAttributes(attributes(font: body, color: isReading ? .clear : Palette.marker, paragraph: bodyParagraph(spacingAfter: metrics.paragraphSpacing)), range: fullRange)
             let lineRange = NSRange(line.range)
             if lineRange.length > 0 {
                 storage.addAttribute(.parchmentRule, value: NSNumber(value: true), range: lineRange)
@@ -219,6 +250,28 @@ final class MarkdownStyler {
         }
 
         applySpans(MarkdownParser.spans(for: line, in: text), line: line, in: storage)
+        if isDropCapLine {
+            applyDropCap(line, in: storage)
+        }
+    }
+
+    /// The first paragraph line of the document, which carries the raised initial.
+    private static func firstParagraphIndex(in lines: [MarkdownLine]) -> Int? {
+        lines.firstIndex { $0.kind == .paragraph }
+    }
+
+    /// Sets the first letter of the line large and in accent color, sitting on the baseline.
+    /// Lines that start with anything but a letter (a `*`, a digit, a link) are left alone.
+    private func applyDropCap(_ line: MarkdownLine, in storage: NSTextStorage) {
+        let location = line.contentStart
+        guard location < line.range.upperBound, location < storage.length,
+              let scalar = Unicode.Scalar(text[location]),
+              Character(scalar).isLetter else { return }
+        storage.addAttributes([
+            .font: FontBook.shared.text(size: metrics.fontSize * 2.6),
+            .foregroundColor: Palette.accent,
+            .kern: NSNumber(value: metrics.fontSize * 0.06),
+        ], range: NSRange(location: location, length: 1))
     }
 
     private func styleHeading(_ line: MarkdownLine, level: Int, in storage: NSTextStorage) {
@@ -238,7 +291,7 @@ final class MarkdownStyler {
 
         let prefix = NSRange(line.prefixRange)
         if prefix.length > 0 {
-            storage.addAttributes([.font: prefixFont, .foregroundColor: Palette.accent], range: prefix)
+            storage.addAttributes([.font: prefixFont, .foregroundColor: isReading ? NSColor.clear : Palette.accent], range: prefix)
         }
         let tracking = Self.headingTracking(level: level) * size
         let content = NSRange(line.contentRange)
@@ -332,7 +385,9 @@ final class MarkdownStyler {
             image = loaded.image
             spacingAfter = loaded.height + Self.imageVerticalPadding
         }
-        storage.setAttributes(attributes(font: body, color: Palette.marker, paragraph: bodyParagraph(spacingAfter: spacingAfter)), range: NSRange(line.fullRange))
+        // Reading mode shows the picture without its source line.
+        let color = isReading && image != nil ? NSColor.clear : Palette.marker
+        storage.setAttributes(attributes(font: body, color: color, paragraph: bodyParagraph(spacingAfter: spacingAfter)), range: NSRange(line.fullRange))
         let lineRange = NSRange(line.range)
         if let image, lineRange.length > 0 {
             storage.addAttribute(.parchmentImage, value: image, range: lineRange)
@@ -346,6 +401,10 @@ final class MarkdownStyler {
         let ordered = spans.sorted { Self.rank($0.kind) < Self.rank($1.kind) }
         let isCode = line.kind.isCodeBlock
         let headingContentStart: Int? = if case .heading = line.kind { line.contentStart } else { nil }
+        // Inline symbols collapse in reading mode. Tables keep their pipes for alignment, and
+        // whole-line syntax (fences, rules, images) is styled per line instead.
+        let hidesInlineSyntax = isReading && Self.hidesInlineSyntax(line.kind)
+        let hidden: [NSAttributedString.Key: Any] = [.parchmentHidden: NSNumber(value: true)]
 
         for span in ordered {
             let range = NSRange(span.range)
@@ -356,7 +415,15 @@ final class MarkdownStyler {
                 // Fence lines keep their code colors, and the hanging heading `#`s stay accent.
                 if isCode { continue }
                 if let headingContentStart, span.range.location < headingContentStart { continue }
-                storage.addAttribute(.foregroundColor, value: Palette.marker, range: range)
+                if hidesInlineSyntax {
+                    storage.addAttributes(hidden, range: range)
+                } else if isReading, Self.isWholeLineSyntax(line.kind) {
+                    // The line style already decided its color (transparent, or marker for
+                    // an image that hasn't loaded).
+                    continue
+                } else {
+                    storage.addAttribute(.foregroundColor, value: Palette.marker, range: range)
+                }
 
             case .strong:
                 transformFonts(in: range, of: storage) { FontBook.shared.adding(bold: true, italic: false, to: $0) }
@@ -381,8 +448,11 @@ final class MarkdownStyler {
                 // The kern after the opening backtick pads the left; after the last code
                 // character, the right.
                 let padding = NSNumber(value: Double(MarkdownLayoutManager.inlineCodePadding))
-                if range.location > 0 {
-                    storage.addAttribute(.kern, value: padding, range: NSRange(location: range.location - 1, length: 1))
+                // In reading mode the opening backtick takes no room, so the kern goes on the
+                // character before it instead.
+                let leftPadIndex = hidesInlineSyntax ? range.location - 2 : range.location - 1
+                if leftPadIndex >= line.range.location {
+                    storage.addAttribute(.kern, value: padding, range: NSRange(location: leftPadIndex, length: 1))
                 }
                 storage.addAttribute(.kern, value: padding, range: NSRange(location: NSMaxRange(range) - 1, length: 1))
 
@@ -396,13 +466,32 @@ final class MarkdownStyler {
                 storage.addAttributes(linkAttributes, range: range)
 
             case .linkDestination(let destination):
+                if hidesInlineSyntax {
+                    storage.addAttributes(hidden, range: range)
+                    continue
+                }
                 storage.addAttribute(.foregroundColor, value: Palette.marker, range: range)
                 if !destination.isEmpty {
                     storage.addAttribute(.parchmentLink, value: destination, range: range)
                 }
 
-            case .listMarker, .quoteMarker:
-                storage.addAttribute(.foregroundColor, value: Palette.marker, range: range)
+            case .listMarker:
+                if !isReading {
+                    storage.addAttribute(.foregroundColor, value: Palette.marker, range: range)
+                } else if case .listItem(isOrdered: true) = line.kind {
+                    // Numbers are content, so they stay, quieter than the text.
+                    storage.addAttribute(.foregroundColor, value: Palette.muted, range: range)
+                } else {
+                    // Hanging markers turn transparent rather than collapsing, so the text
+                    // doesn't move. A bullet is drawn in place of `-`; tasks show their circle.
+                    storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+                    if case .listItem = line.kind, let bullet = firstNonSpace(in: range) {
+                        storage.addAttribute(.parchmentBullet, value: NSNumber(value: true), range: NSRange(location: bullet, length: 1))
+                    }
+                }
+
+            case .quoteMarker:
+                storage.addAttribute(.foregroundColor, value: isReading ? NSColor.clear : Palette.marker, range: range)
 
             case .taskBox(let isChecked):
                 storage.addAttributes([
@@ -420,6 +509,28 @@ final class MarkdownStyler {
                 }
             }
         }
+    }
+
+    private static func hidesInlineSyntax(_ kind: LineKind) -> Bool {
+        switch kind {
+        case .paragraph, .heading, .quote, .listItem, .task: true
+        default: false
+        }
+    }
+
+    private static func isWholeLineSyntax(_ kind: LineKind) -> Bool {
+        switch kind {
+        case .fence, .rule, .image: true
+        default: false
+        }
+    }
+
+    private func firstNonSpace(in range: NSRange) -> Int? {
+        for index in range.location..<NSMaxRange(range) where index < text.length {
+            let unit = text[index]
+            if unit != 32, unit != 9 { return index }
+        }
+        return nil
     }
 
     /// Broad spans first, so narrower ones (markers, links, boxes) win where they overlap.

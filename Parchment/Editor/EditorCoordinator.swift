@@ -33,13 +33,13 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
 
     // MARK: - Lifecycle
 
-    func makeScrollView(fileURL: URL?, isReadOnly: Bool, isFocusMode: Bool, isTypewriterMode: Bool, undoManager: UndoManager?) -> NSScrollView {
+    func makeScrollView(from view: EditorView, undoManager: UndoManager?) -> NSScrollView {
         documentUndoManager = undoManager
 
         let textView = ParchmentTextView.makeEditor()
         textView.styler = styler
         styler.textView = textView
-        styler.documentURL = fileURL
+        styler.documentURL = view.fileURL
         textView.metrics = styler.metrics
 
         let scrollView = NSScrollView()
@@ -51,17 +51,21 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         scrollView.backgroundColor = Palette.paper
         scrollView.documentView = textView
 
+        // Set before loading, so the first styling pass already includes them.
+        textView.ornaments = view.ornaments
+        textView.isReading = view.isReading
+        textView.inkEffect = view.inkEffect
         textView.loadText(document.text)
-        textView.isEditable = !isReadOnly
-        textView.isFocusMode = isFocusMode
-        textView.isTypewriterMode = isTypewriterMode
+        textView.isAgentReadOnly = view.isReadOnly
+        textView.isFocusMode = view.isFocusMode
+        textView.isTypewriterMode = view.isTypewriterMode
         textView.delegate = self
         self.textView = textView
 
         controller.textView = textView
         controller.textDidChange(styler.text, lines: styler.lines)
         observe(scrollView.contentView)
-        watchFile(at: fileURL)
+        watchFile(at: view.fileURL)
         return scrollView
     }
 
@@ -95,8 +99,8 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
             styler.restyleImageLines(matching: nil)
         }
         watchFile(at: view.fileURL)
-        if textView.isEditable == view.isReadOnly {
-            textView.isEditable = !view.isReadOnly
+        if textView.isAgentReadOnly != view.isReadOnly {
+            textView.isAgentReadOnly = view.isReadOnly
         }
         if textView.agentPresence != view.agent {
             textView.agentPresence = view.agent
@@ -111,6 +115,15 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         }
         if textView.isTypewriterMode != view.isTypewriterMode {
             textView.isTypewriterMode = view.isTypewriterMode
+        }
+        if textView.ornaments != view.ornaments {
+            textView.ornaments = view.ornaments
+        }
+        if textView.isReading != view.isReading {
+            textView.isReading = view.isReading
+        }
+        if textView.inkEffect != view.inkEffect {
+            textView.inkEffect = view.inkEffect
         }
     }
 
@@ -192,6 +205,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         guard let textView, let scrollView = textView.enclosingScrollView else { return }
         textView.visibleRegionDidChange()
         reportScrollProgress(of: scrollView, documentHeight: textView.frame.height)
+        controller.visibleTopDidChange(to: textView.topVisibleCharacterIndex())
     }
 
     private func reportScrollProgress(of scrollView: NSScrollView, documentHeight: CGFloat) {
