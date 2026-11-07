@@ -7,6 +7,7 @@ struct DocumentWindowView: View {
     @State private var controller = EditorController()
     @State private var windowWidth = 0.0
     @AppStorage(PreferenceKey.fontSize) private var fontSize = EditorMetrics.defaultFontSize
+    @AppStorage(PreferenceKey.lineHeight) private var lineHeight = EditorMetrics.defaultLineHeight
     @AppStorage(PreferenceKey.focusMode) private var isFocusMode = false
     @AppStorage(PreferenceKey.typewriterMode) private var isTypewriterMode = false
     @AppStorage(PreferenceKey.ornaments) private var ornaments = true
@@ -85,6 +86,7 @@ struct DocumentWindowView: View {
             isReadOnly: status?.isReadOnly ?? false,
             agent: status.map { AgentPresence(status: $0, steps: controller.planSteps, follows: followsClaude) },
             fontSize: fontSize,
+            lineHeight: lineHeight,
             isFocusMode: isFocusMode,
             isTypewriterMode: isTypewriterMode,
             isReading: controller.isReading,
@@ -112,7 +114,7 @@ struct DocumentWindowView: View {
 
     /// Room for the panel plus the full text column with some breathing space each side.
     private var isSidebarAvailable: Bool {
-        let metrics = EditorMetrics(fontSize: fontSize)
+        let metrics = EditorMetrics(fontSize: fontSize, lineHeight: lineHeight)
         let needed = OutlineSidebar.width + 1 + metrics.gutter + metrics.measure + 96
         return windowWidth >= needed
     }

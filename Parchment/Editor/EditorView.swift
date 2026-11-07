@@ -10,6 +10,7 @@ struct EditorView: NSViewRepresentable {
     /// What Claude is doing in this file, for the in-text effects. `nil` when no session follows it.
     let agent: AgentPresence?
     let fontSize: Double
+    let lineHeight: Double
     let isFocusMode: Bool
     let isTypewriterMode: Bool
     let isReading: Bool
@@ -20,7 +21,7 @@ struct EditorView: NSViewRepresentable {
         EditorCoordinator(
             document: document,
             controller: controller,
-            metrics: EditorCoordinator.metrics(forFontSize: fontSize)
+            metrics: EditorCoordinator.metrics(fontSize: fontSize, lineHeight: lineHeight)
         )
     }
 

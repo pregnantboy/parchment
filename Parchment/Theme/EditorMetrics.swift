@@ -1,11 +1,15 @@
 import AppKit
 
-/// Layout numbers derived from the user's text size. Everything scales with `fontSize`.
+/// Layout numbers derived from the user's text size and line height. Everything scales with `fontSize`.
 nonisolated struct EditorMetrics: Equatable, Sendable {
-    static let defaultFontSize = 18.0
+    static let defaultFontSize = 15.0
     static let fontSizeRange = 12.0...28.0
+    /// Body line height as a multiple of the text size.
+    static let defaultLineHeight = 1.5
+    static let lineHeightRange = 1.2...2.2
 
     let fontSize: Double
+    let lineHeight: Double
     let measure: Double
     let gutter: Double
     let codeFontSize: Double
@@ -13,15 +17,20 @@ nonisolated struct EditorMetrics: Equatable, Sendable {
     let paragraphSpacing: Double
     let topInset: Double
 
-    /// Clamps `fontSize` into `fontSizeRange` before deriving the other values.
-    init(fontSize: Double) {
+    /// Clamps `fontSize` and `lineHeight` into their ranges before deriving the other values.
+    init(fontSize: Double, lineHeight: Double = defaultLineHeight) {
         let size = min(max(fontSize, Self.fontSizeRange.lowerBound), Self.fontSizeRange.upperBound)
+        let height = min(max(lineHeight, Self.lineHeightRange.lowerBound), Self.lineHeightRange.upperBound)
         self.fontSize = size
+        self.lineHeight = height
         measure = size * 36.7
         gutter = size * 3.55
         codeFontSize = size * 0.8
-        lineSpacing = (size * 0.5).rounded()
-        paragraphSpacing = size
+        // The font's own line height already includes some leading; add what is missing.
+        let body = FontBook.shared.text(size: size)
+        let natural = Double(body.ascender - body.descender + body.leading)
+        lineSpacing = max(0, size * height - natural).rounded()
+        paragraphSpacing = (size * 0.9).rounded()
         topInset = 28
     }
 

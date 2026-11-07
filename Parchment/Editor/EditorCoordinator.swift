@@ -25,10 +25,9 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         super.init()
     }
 
-    /// Clamps the user's text size into the supported range.
-    static func metrics(forFontSize fontSize: Double) -> EditorMetrics {
-        let range = EditorMetrics.fontSizeRange
-        return EditorMetrics(fontSize: min(max(fontSize, range.lowerBound), range.upperBound))
+    /// The metrics for the user's text size and line height, each clamped into its range.
+    static func metrics(fontSize: Double, lineHeight: Double) -> EditorMetrics {
+        EditorMetrics(fontSize: fontSize, lineHeight: lineHeight)
     }
 
     // MARK: - Lifecycle
@@ -106,7 +105,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
             textView.agentPresence = view.agent
         }
 
-        let metrics = Self.metrics(forFontSize: view.fontSize)
+        let metrics = Self.metrics(fontSize: view.fontSize, lineHeight: view.lineHeight)
         if textView.metrics != metrics {
             textView.metrics = metrics
         }

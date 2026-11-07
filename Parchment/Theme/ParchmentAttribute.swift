@@ -21,4 +21,10 @@ nonisolated extension NSAttributedString.Key {
     /// Value: `NSNumber(true)`, on the transparent `-`, `*` or `+` of a bullet in reading
     /// mode. The layout manager draws a dot or diamond in its place.
     static let parchmentBullet = NSAttributedString.Key("app.parchment.bullet")
+    /// Value: `NSNumber(Double width)`, on a table's `---|---` row in reading mode. The layout
+    /// manager draws the header rule across that row, `width` points from the gutter edge.
+    static let parchmentTableRule = NSAttributedString.Key("app.parchment.tableRule")
+    /// Value: `NSNumber(Double width)`, on a table row (not the last) in reading mode. The
+    /// layout manager draws a faint rule below it.
+    static let parchmentTableRowRule = NSAttributedString.Key("app.parchment.tableRowRule")
 }
