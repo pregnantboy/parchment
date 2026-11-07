@@ -1,18 +1,22 @@
 # Claude Code plan view
 
-**Status:** In progress
+**Status:** Built, waiting for the user to try it
 **Created:** 2026-11-07
 **Last updated:** 2026-11-07
 
 ## Resume from here
 
-Phase 1 is done: `ParchmentCore` has `TextChange` and `PlanSteps`; the new `ParchmentAgent` target has hook
-event parsing, sessions, todos, progress, the plan file rule, the inbox and the settings installer. 96 package
-tests pass on Linux (`/opt/swift/usr/bin/swift test --package-path Packages/ParchmentCore`; the toolchain was
-downloaded from swift.org into `/opt/swift`). The hook script was also run in a fake home folder: it stays quiet
-when Parchment is not running, saves plan events and calls `open -g`, and leaves no temp files.
-Next: Phase 2 (reload on change, read-only). The sandbox has no macOS, so app code is only checked by the
-GitHub Actions "Build" run.
+Phases 1 to 6 are done. GitHub Actions "Build" run 12 (commit 3f70fad) is green: 97 package tests pass and the
+app compiles with no code warnings. Nothing has run on a real Mac yet.
+
+Next: Phase 7. The user downloads `Parchment.zip` from the latest green run, chooses Parchment > Connect to Claude
+Code…, restarts Claude Code, and watches a real plan. Check in particular:
+- Plans open behind the terminal (not in front) and the blank launch window closes.
+- `TaskCreate` ids are found in `tool_response` (else `TaskUpdate`s are ignored; see `TodoList.createdID`).
+- The hook's `"*"` matcher and the `PostToolUseFailure` event are accepted by the user's Claude Code version
+  (`/hooks` inside Claude Code lists them).
+- Effects positions: margin bar left of the column, caret tag above the line, helper tags after the step line.
+- Following a non-plan Markdown file the user has open (any open `.md` Claude edits becomes followed).
 
 ## Context
 
@@ -230,9 +234,9 @@ nothing animates.
 
 ### Phase 6: CI green, README, review pass
 
-- [ ] Push, fix compile errors until the "Build" workflow is green.
-- [ ] README section on connecting and what each signal means.
-- [ ] Review pass over the diff.
+- [x] Push, fix compile errors until the "Build" workflow is green.
+- [x] README section on connecting and what each signal means.
+- [x] Review pass over the diff.
 
 Files: any
 Verify: GitHub Actions "Build" green on the branch.
