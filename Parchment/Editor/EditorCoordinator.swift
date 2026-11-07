@@ -98,6 +98,9 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         if textView.isEditable == view.isReadOnly {
             textView.isEditable = !view.isReadOnly
         }
+        if textView.agentPresence != view.agent {
+            textView.agentPresence = view.agent
+        }
 
         let metrics = Self.metrics(forFontSize: view.fontSize)
         if textView.metrics != metrics {
@@ -112,6 +115,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     func tearDown() {
+        textView?.stopAgentEffects()
         fileWatcher?.stop()
         fileWatcher = nil
         for observer in observers {
@@ -156,9 +160,10 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
     }
 
     private func applyExternalText(_ string: String) {
-        guard let textView, textView.applyExternalText(string) != nil else { return }
+        guard let textView, let change = textView.applyExternalText(string) else { return }
         document.text = textView.string
         controller.textDidChange(styler.text, lines: styler.lines)
+        controller.externalTextDidChange(change)
         if let scrollView = textView.enclosingScrollView {
             reportScrollProgress(of: scrollView, documentHeight: textView.frame.height)
         }

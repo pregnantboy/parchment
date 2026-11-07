@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct ParchmentApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         // With iCloud Drive on, document apps open the Open panel at launch. Turning this
         // AppKit default off makes Parchment start on a blank page instead. Windows macOS

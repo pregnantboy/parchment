@@ -141,8 +141,8 @@ App (`Parchment/`):
 - `Agent/AgentMonitor.swift` (create) - watches the inbox, keeps sessions, maps sessions to plan files, opens and replaces windows.
 - `Agent/DirectoryWatcher.swift` (create) - `DispatchSource` watcher for the inbox folder.
 - `Agent/FileWatcher.swift` (create) - `DispatchSource` watcher for one file, survives atomic replace.
-- `Agent/ConnectClaudeSheet.swift` (create) - shows the settings change and confirms.
-- `Agent/PlanActivity.swift` (create) - observable per-file view of the attached session (status, activity, progress, steps, ticker).
+- `Agent/ClaudeConnection.swift` (create) - Connect/Disconnect alerts that show the settings change and confirm.
+- `Window/PlanStatus.swift` (create) - what the window shows about the following session (headline, progress text, read-only).
 - `Editor/AgentEffects.swift` (create) - effect state (ink regions, margin marks, caret, pulsing and filling tasks, helper tags) and timing.
 - `Editor/EditorCoordinator.swift` (modify) - file watching, external diff apply, read-only, effects hook-up.
 - `Editor/ParchmentTextView.swift` (modify) - `applyExternalText`, draw overlays, display link, follow scrolling.
@@ -195,12 +195,12 @@ without a "modified" dot.
 
 ### Phase 3: Agent monitor, hook installer, window opening
 
-- [ ] `AgentMonitor` (main actor, observable): inbox watcher, sessions keyed by `session_id`, session to plan URL,
+- [x] `AgentMonitor` (main actor, observable): inbox watcher, sessions keyed by `session_id`, session to plan URL,
       `activity(for: URL) -> PlanActivity?`, stale timer.
-- [ ] Open plan files in the background; one window per session; close the old one only if auto-opened.
-- [ ] Attach a session to a file the user already has open when the session edits it.
-- [ ] `ConnectClaudeSheet` + Connect/Disconnect menu items; write the script (0755) and settings.
-- [ ] Stop Following menu item detaches the session from the window.
+- [x] Open plan files in the background; one window per session; close the old one only if auto-opened.
+- [x] Attach a session to a file the user already has open when the session edits it.
+- [x] `ClaudeConnection` alerts + Connect/Disconnect menu items; write the script (0755) and settings.
+- [x] Stop Following menu item detaches the session from the window.
 
 Files: `Parchment/Agent/*`, `Parchment/App/*`, `project.yml`
 Verify: CI builds. On the Mac: Connect, start `claude` in a repo, ask for a plan in plan mode; Parchment opens it
@@ -208,21 +208,21 @@ behind the terminal; the window is read-only until the session ends.
 
 ### Phase 4: Status pill, ticker and progress line
 
-- [ ] `AgentPill` with states, shimmer (`TimelineView(.animation)` + moving gradient mask), helper count, progress label.
-- [ ] Ticker of the last 3 actions above the pill, each fading after 8s.
-- [ ] `ProgressLine` takes plan progress while a plan is attached and shows a glint while working.
+- [x] `AgentPill` with states, shimmer (`TimelineView(.animation)` + moving gradient mask), helper count, progress label.
+- [x] Ticker of the last 3 actions above the pill, each fading after 8s.
+- [x] `ProgressLine` takes plan progress while a plan is attached and shows a glint while working.
 
 Files: `Parchment/Window/*`
 Verify: CI builds. On the Mac: pill text follows Claude's tools; shimmer stops on "Waiting for you".
 
 ### Phase 5: In-text effects
 
-- [ ] `AgentEffects` with display-link timing and Reduce Motion handling.
-- [ ] Wet ink and margin marks for each external change.
-- [ ] Claude's caret with name tag (main agent "Claude", helpers by `agent_type`).
-- [ ] Follow Claude scrolling, paused for 4s after the user scrolls.
-- [ ] Pulsing current task circles and the fill animation for newly checked boxes.
-- [ ] Helper tags at the end of a current step's first line.
+- [x] `AgentEffects` with display-link timing and Reduce Motion handling.
+- [x] Wet ink and margin marks for each external change.
+- [x] Claude's caret with name tag (main agent "Claude", helpers by `agent_type`).
+- [x] Follow Claude scrolling, paused for 4s after the user scrolls.
+- [x] Pulsing current task circles and the fill animation for newly checked boxes.
+- [x] Helper tags at the end of a current step's first line.
 
 Files: `Parchment/Editor/*`, `Parchment/App/ParchmentCommands.swift`, `Parchment/App/PreferenceKey.swift`
 Verify: CI builds. On the Mac: watch a plan being executed; effects show and stop; with Reduce Motion on,

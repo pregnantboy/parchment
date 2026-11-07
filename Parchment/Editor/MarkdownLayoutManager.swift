@@ -10,6 +10,16 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
     /// The hanging gutter width, in container coordinates. Code backgrounds and quote bars align to it.
     var gutter: CGFloat = 64
 
+    // Claude effects, set by the text view on the main actor before drawing.
+
+    /// Line starts of the steps Claude is working on. Their open task circles turn vermilion and pulse.
+    var activeTaskLines: Set<Int> = []
+    /// 0...1: how far the current pulse ring has spread.
+    var taskPulse: CGFloat = 0
+    var animatesTasks = true
+    /// Task boxes Claude just ticked, by the location of their `[`, with fill progress 0...1.
+    var taskFills: [Int: CGFloat] = [:]
+
     /// Horizontal padding inside an inline code pill. The styler kerns the characters around
     /// the code by the same amount so the pill has room.
     static let inlineCodePadding: CGFloat = 4
@@ -218,12 +228,25 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
         let center = CGPoint(x: origin.x + boxRect.midX, y: origin.y + baseline - font.capHeight / 2)
         let circle = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
         let scale = font.pointSize / 18
+        let lineStart = storage.mutableString.lineRange(for: NSRange(location: boxRange.location, length: 0)).location
+        let isActive = !isChecked && activeTaskLines.contains(lineStart)
 
         context.saveGState()
         if isChecked {
+            // Claude just ticked it: the fill grows from the center, then the check appears.
+            let fill = taskFills[boxRange.location] ?? 1
+            if fill < 1 {
+                let lineWidth = max(1.5, 2 * scale)
+                Palette.ink.setStroke()
+                context.setLineWidth(lineWidth)
+                context.strokeEllipse(in: circle.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
+            }
+            let eased = 1 - (1 - fill) * (1 - fill)
+            let inset = diameter * (1 - eased) / 2
             Palette.accent.setFill()
-            context.fillEllipse(in: circle)
+            context.fillEllipse(in: circle.insetBy(dx: inset, dy: inset))
 
+            context.setAlpha(min(1, max(0, (fill - 0.5) * 2)))
             NSColor.white.setStroke()
             context.setLineWidth(max(1.5, 2 * scale))
             context.setLineCap(.round)
@@ -234,9 +257,16 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
             context.strokePath()
         } else {
             let lineWidth = max(1.5, 2 * scale)
-            Palette.ink.setStroke()
+            (isActive ? Palette.accent : Palette.ink).setStroke()
             context.setLineWidth(lineWidth)
             context.strokeEllipse(in: circle.insetBy(dx: lineWidth / 2, dy: lineWidth / 2))
+            if isActive && animatesTasks {
+                // A ring that spreads out and fades, once per pulse.
+                let spread = 7 * scale * taskPulse
+                Palette.accent.withAlphaComponent(0.55 * (1 - taskPulse)).setStroke()
+                context.setLineWidth(max(1, 1.5 * scale))
+                context.strokeEllipse(in: circle.insetBy(dx: -spread, dy: -spread))
+            }
         }
         context.restoreGState()
     }
