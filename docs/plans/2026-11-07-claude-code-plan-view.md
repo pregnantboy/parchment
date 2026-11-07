@@ -6,9 +6,13 @@
 
 ## Resume from here
 
-Plan written. Next: Phase 1 (pure logic in the Swift package, with tests). Nothing is built yet.
-The sandbox has no macOS, so only the Swift package can be built and tested locally (Linux toolchain
-at `/opt/swift/usr/bin/swift`, if installed). App code is checked by the GitHub Actions "Build" run.
+Phase 1 is done: `ParchmentCore` has `TextChange` and `PlanSteps`; the new `ParchmentAgent` target has hook
+event parsing, sessions, todos, progress, the plan file rule, the inbox and the settings installer. 96 package
+tests pass on Linux (`/opt/swift/usr/bin/swift test --package-path Packages/ParchmentCore`; the toolchain was
+downloaded from swift.org into `/opt/swift`). The hook script was also run in a fake home folder: it stays quiet
+when Parchment is not running, saves plan events and calls `open -g`, and leaves no temp files.
+Next: Phase 2 (reload on change, read-only). The sandbox has no macOS, so app code is only checked by the
+GitHub Actions "Build" run.
 
 ## Context
 
@@ -154,23 +158,23 @@ App (`Parchment/`):
 
 ### Phase 1: Pure logic and tests
 
-- [ ] `TextChange.between(old:new:) -> TextChange?` (common prefix and suffix in UTF-16; `oldRange`, `newRange`).
-- [ ] `PlanSteps.steps(in:text:) -> [PlanStep]` (`range`, `title`, `kind: task(isChecked) | numbered | heading`, `level`).
+- [x] `TextChange.between(old:new:) -> TextChange?` (common prefix and suffix in UTF-16; `oldRange`, `newRange`).
+- [x] `PlanSteps.steps(in:text:) -> [PlanStep]` (`range`, `title`, `kind: task(isChecked) | numbered | heading`, `level`).
       Tasks if any exist; else top-level numbered items; else H2/H3 headings (skip the H1 title).
-- [ ] `AgentEvent` decoding for SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse,
+- [x] `AgentEvent` decoding for SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse,
       PostToolUseFailure, Notification, Stop, SubagentStart, SubagentStop. Unknown events and fields are ignored.
-- [ ] `AgentSession.apply(_:)`: status (working, waiting, done, ended), current activity per agent, todos,
+- [x] `AgentSession.apply(_:)`: status (working, waiting, done, ended), current activity per agent, todos,
       helpers, plan URL, last edited file and time, recent actions (max 3).
-- [ ] Todos: `TodoWrite` replaces the list; `TaskCreate` adds (id from `tool_response` if found, else a counter);
+- [x] Todos: `TodoWrite` replaces the list; `TaskCreate` adds (id from `tool_response` if found, else a counter);
       `TaskUpdate` changes status and owner. The agent that sets a todo in progress becomes its owner.
-- [ ] `ActivityText` for Read, Write, Edit, MultiEdit, Bash (uses `description` when present), Grep, Glob,
+- [x] `ActivityText` for Read, Write, Edit, MultiEdit, Bash (uses `description` when present), Grep, Glob,
       WebFetch, WebSearch, Agent/Task, TodoWrite/Task*, ExitPlanMode, `mcp__server__tool`, and a default.
-- [ ] `StepMatcher`: normalised word overlap (lowercase, drop short and common words), threshold 0.5.
-- [ ] `PlanProgress.make(steps:todos:lastEditLocation:)`: done, total, label style (count or step), current
+- [x] `StepMatcher`: normalised word overlap (lowercase, drop short and common words), threshold 0.5.
+- [x] `PlanProgress.make(steps:todos:lastEditLocation:)`: done, total, label style (count or step), current
       step indices with owners.
-- [ ] `PlanFileRule.isPlanLike(path:home:)`.
-- [ ] `EventInbox`: list `*.json` sorted by creation date then name, read, delete; drop files older than 2 hours.
-- [ ] `HookInstaller`: script text; `install(into: Data?) -> Data` and `uninstall(from: Data) -> Data`
+- [x] `PlanFileRule.isPlanLike(path:home:)`.
+- [x] `EventInbox`: list `*.json` sorted by creation date then name, read, delete; drop files older than 2 hours.
+- [x] `HookInstaller`: script text; `install(into: Data?) -> Data` and `uninstall(from: Data) -> Data`
       (idempotent, keeps other keys and hooks, pretty printed).
 
 Files: `Packages/ParchmentCore/**`
