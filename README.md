@@ -4,10 +4,12 @@ Parchment is a native Markdown editor for the Mac. It edits one pane of plain te
 
 It is set in an old-style book serif. A reading mode (⇧⌘R) hides the Markdown symbols and locks the text, while checkboxes stay clickable and links open with a click. When the window is wide enough, the outline sits in a panel on the left.
 
+Text size and line spacing are set in Parchment > Settings (15 pt and 1.5 by default).
+
 Two effects give it a storybook feel, and each can be switched off in Parchment > Settings:
 
 - **Ink bleed**: new letters land as wet ink and settle (off while Reduce Motion is on).
-- **Ornaments**: wax-seal checkboxes, filigree rules, a large first letter, a decorative quote mark and diamond bullets.
+- **Ornaments**: wax-seal checkboxes, filigree rules, a decorative quote mark and diamond bullets.
 
 ## Requirements
 
@@ -53,7 +55,7 @@ The tag sets the version the app reports (here 1.0.0). The newest release is alw
 
 Parchment can show the plan Claude Code is working on, live, when Claude Code runs in a terminal on the same Mac.
 
-1. Choose **Parchment > Connect to Claude Code…**. Parchment shows the hook it adds to `~/.claude/settings.json` and saves a backup next to it. Restart any Claude Code sessions that are already running.
+1. Open **Parchment > Settings** (⌘,) and click **Connect…** under Claude Code. Parchment shows the hook it adds to `~/.claude/settings.json` and saves a backup next to it. Restart any Claude Code sessions that are already running.
 2. Work with Claude Code as usual. When it writes a plan (in plan mode, or any Markdown file in a `plans` folder or with "plan" in its name), Parchment opens it in the background, one window per session.
 
 While Claude works on the file, the window is read-only and shows:
@@ -65,7 +67,7 @@ While Claude works on the file, the window is read-only and shows:
 
 **View > Follow Claude** scrolls to each change (it pauses for a few seconds after you scroll). **View > Stop Following Claude** makes the window an ordinary editable document. The window also becomes editable when the session ends. Turning on Reduce Motion in System Settings stops all the animation.
 
-To undo the setup, choose **Parchment > Disconnect from Claude Code…**; it removes only Parchment's hook.
+To undo the setup, click **Disconnect…** in the same place; it removes only Parchment's hook.
 
 ## Keyboard shortcuts
 

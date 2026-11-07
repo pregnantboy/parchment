@@ -29,10 +29,6 @@ final class MarkdownStyler {
     /// transparent so the text doesn't move). The text view restyles everything when it changes.
     var isReading = false
 
-    /// Ornaments: the document's first paragraph opens with a large initial in accent color.
-    /// The text view restyles everything when it changes.
-    var ornaments = false
-
     /// The text view whose typing attributes and storage this styler manages.
     weak var textView: NSTextView?
 
@@ -42,11 +38,12 @@ final class MarkdownStyler {
 
     /// Horizontal room for images, measured from the gutter edge to the window's right side.
     private var availableImageWidth = Double.infinity
+    /// Horizontal room for text, from the gutter edge to the right edge of the column. A table
+    /// wider than this is left as typed, since its wrapped rows can't line up.
+    private var textWidth = Double.infinity
     private var paragraphCache: [ParagraphKey: NSParagraphStyle] = [:]
     private var widthCache: [WidthKey: Double] = [:]
     private var pendingImages: Set<URL> = []
-    /// The index of the line that carries the raised initial, as of the last parse.
-    private var dropCapLine: Int?
 
     /// Space reserved above and below an inline image, in total.
     private static let imageVerticalPadding = 24.0
@@ -79,7 +76,6 @@ final class MarkdownStyler {
         } else {
             LineDiff.changedLines(old: text, oldLines: lines, new: newText, newLines: newLines)
         }
-        let oldLineCount = lines.count
         text = newText
         lines = newLines
 
@@ -88,23 +84,6 @@ final class MarkdownStyler {
             indices.formUnion(lineIndices(touching: selection))
         }
 
-        // The raised initial moves when a paragraph appears above it or its own line stops
-        // being a paragraph, so both its old line and its new one are restyled.
-        let oldDropCap = dropCapLine
-        dropCapLine = ornaments ? Self.firstParagraphIndex(in: newLines) : nil
-        if !isFull {
-            if let old = oldDropCap {
-                indices.insert(old)
-                // Lines at or after the edit moved by the change in line count.
-                let shifted = old + newLines.count - oldLineCount
-                if old >= changed.lowerBound, shifted >= 0 {
-                    indices.insert(shifted)
-                }
-            }
-            if let new = dropCapLine {
-                indices.insert(new)
-            }
-        }
         restyleLines(indices, in: storage)
         updateTypingAttributes()
         (textView as? ParchmentTextView)?.stylingDidChange()
@@ -141,6 +120,21 @@ final class MarkdownStyler {
         }
     }
 
+    /// Records how much horizontal room text has, realigning tables when it changes.
+    func updateTextWidth(_ width: Double) {
+        guard abs(width - textWidth) >= 1 else { return }
+        textWidth = width
+        guard let storage = textView?.textStorage, !lines.isEmpty else { return }
+        if storage.length != text.length {
+            restyle(storage, full: false)
+            return
+        }
+        let tables = IndexSet(lines.indices.filter { lines[$0].kind.isTable })
+        guard !tables.isEmpty else { return }
+        restyleLines(tables, in: storage)
+        (textView as? ParchmentTextView)?.stylingDidChange()
+    }
+
     /// The attributes for newly typed text: body font, ink, and the body paragraph style.
     var bodyAttributes: [NSAttributedString.Key: Any] {
         attributes(
@@ -160,13 +154,42 @@ final class MarkdownStyler {
         textView.typingAttributes = bodyAttributes
     }
 
+    /// Restyles the lines at `indices`. A table's columns depend on all of its rows, so a
+    /// change to any table line restyles and realigns that whole table.
     private func restyleLines(_ indices: IndexSet, in storage: NSTextStorage) {
         guard !indices.isEmpty else { return }
+        var all = IndexSet()
+        var tables: [Range<Int>] = []
+        for index in indices where index >= 0 && index < lines.count && !all.contains(index) {
+            if lines[index].kind.isTable {
+                let table = tableBlock(containing: index)
+                tables.append(table)
+                all.insert(integersIn: table)
+            } else {
+                all.insert(index)
+            }
+        }
         storage.beginEditing()
-        for index in indices where index >= 0 && index < lines.count {
-            style(lines[index], isDropCapLine: index == dropCapLine, in: storage)
+        for index in all {
+            style(lines[index], in: storage)
+        }
+        for table in tables {
+            alignTable(table, in: storage)
         }
         storage.endEditing()
+    }
+
+    /// The lines of the table that holds line `index`, from its header to its last row.
+    private func tableBlock(containing index: Int) -> Range<Int> {
+        var start = index
+        while start > 0, lines[start].kind != .tableHeader, lines[start - 1].kind.isTable {
+            start -= 1
+        }
+        var end = index + 1
+        while end < lines.count, lines[end].kind.isTable, lines[end].kind != .tableHeader {
+            end += 1
+        }
+        return start..<end
     }
 
     /// Copies the storage's UTF-16 contents in one call, which is much faster than walking a `String`.
@@ -207,7 +230,7 @@ final class MarkdownStyler {
 
     // MARK: - Line styles
 
-    private func style(_ line: MarkdownLine, isDropCapLine: Bool, in storage: NSTextStorage) {
+    private func style(_ line: MarkdownLine, in storage: NSTextStorage) {
         let fullRange = NSRange(line.fullRange)
         guard fullRange.length > 0, NSMaxRange(fullRange) <= storage.length else { return }
         let body = FontBook.shared.text(size: metrics.fontSize)
@@ -250,28 +273,6 @@ final class MarkdownStyler {
         }
 
         applySpans(MarkdownParser.spans(for: line, in: text), line: line, in: storage)
-        if isDropCapLine {
-            applyDropCap(line, in: storage)
-        }
-    }
-
-    /// The first paragraph line of the document, which carries the raised initial.
-    private static func firstParagraphIndex(in lines: [MarkdownLine]) -> Int? {
-        lines.firstIndex { $0.kind == .paragraph }
-    }
-
-    /// Sets the first letter of the line large and in accent color, sitting on the baseline.
-    /// Lines that start with anything but a letter (a `*`, a digit, a link) are left alone.
-    private func applyDropCap(_ line: MarkdownLine, in storage: NSTextStorage) {
-        let location = line.contentStart
-        guard location < line.range.upperBound, location < storage.length,
-              let scalar = Unicode.Scalar(text[location]),
-              Character(scalar).isLetter else { return }
-        storage.addAttributes([
-            .font: FontBook.shared.text(size: metrics.fontSize * 2.6),
-            .foregroundColor: Palette.accent,
-            .kern: NSNumber(value: metrics.fontSize * 0.06),
-        ], range: NSRange(location: location, length: 1))
     }
 
     private func styleHeading(_ line: MarkdownLine, level: Int, in storage: NSTextStorage) {
@@ -361,18 +362,143 @@ final class MarkdownStyler {
         storage.addAttribute(.parchmentBlock, value: NSNumber(value: Self.decoration(.code, position: position).rawValue), range: fullRange)
     }
 
+    /// Tables are set in the body font; `alignTable` then lines up their columns. In reading
+    /// mode the `---|---` row shrinks to a thin gap where the header rule is drawn.
     private func styleTable(_ line: MarkdownLine, in storage: NSTextStorage) {
-        let font = FontBook.shared.mono(size: metrics.fontSize * 0.85)
+        let isDelimiter = line.kind == .tableDelimiter
+        let collapses = isDelimiter && isReading
+        let font = FontBook.shared.text(size: collapses ? 4 : metrics.fontSize)
+        let rowGap = collapses ? 0 : (metrics.fontSize * 0.35).rounded()
+        let position = line.blockPosition
         let paragraph = paragraphStyle(ParagraphKey(
             firstLineHeadIndent: gutter,
             headIndent: gutter,
-            lineSpacing: (metrics.lineSpacing * 0.6).rounded(),
-            spacingBefore: 0,
-            spacingAfter: line.blockPosition.isLast ? metrics.paragraphSpacing : 0
+            lineSpacing: 0,
+            spacingBefore: position.isFirst ? 0 : rowGap,
+            spacingAfter: position.isLast ? metrics.paragraphSpacing : rowGap
         ))
-        let color = line.kind == .tableDelimiter ? Palette.marker : Palette.ink
+        let color: NSColor = isDelimiter ? (isReading ? .clear : Palette.marker) : Palette.ink
         storage.setAttributes(attributes(font: font, color: color, paragraph: paragraph), range: NSRange(line.fullRange))
     }
+
+    // MARK: - Table columns
+
+    /// Lines up a table's columns: the last visible character of each cell is kerned so the
+    /// pipe after it sits at the same x on every row. A table too wide for the column is left
+    /// as typed. In reading mode, rules go under the header and between rows.
+    private func alignTable(_ block: Range<Int>, in storage: NSTextStorage) {
+        guard !block.isEmpty else { return }
+        let cells = block.map { cellRanges(of: lines[$0]) }
+        let widths = cells.map { $0.map { visibleWidth(of: $0, in: storage) } }
+        let isDelimiter = block.map { lines[$0].kind == .tableDelimiter }
+        let gap = (metrics.fontSize * 0.5).rounded()
+
+        // Where each line's current cell starts, and the kern each cell needs.
+        var starts = [Double](repeating: 0, count: block.count)
+        var pads: [[Double]] = cells.map { [Double](repeating: 0, count: $0.count) }
+        let columnCount = cells.map(\.count).max() ?? 0
+        // Every cell but a line's last is followed by a pipe, so it can be padded.
+        for column in 0..<max(0, columnCount - 1) {
+            var end = 0.0
+            for row in 0..<block.count where !isDelimiter[row] && column < cells[row].count - 1 {
+                end = max(end, starts[row] + widths[row][column])
+            }
+            if end > 0 { end += gap }
+            for row in 0..<block.count where column < cells[row].count - 1 {
+                let natural = starts[row] + widths[row][column]
+                let canPad = kernAnchor(for: cells[row][column], line: lines[block.lowerBound + row], in: storage) != nil
+                let pad = canPad ? end - natural : 0
+                pads[row][column] = pad
+                let pipe = NSRange(location: NSMaxRange(cells[row][column]), length: 1)
+                starts[row] = natural + pad + visibleWidth(of: pipe, in: storage)
+            }
+        }
+
+        var tableWidth = 0.0
+        for row in 0..<block.count where !isDelimiter[row] {
+            tableWidth = max(tableWidth, starts[row] + (widths[row].last ?? 0))
+        }
+        let fits = tableWidth <= textWidth
+        if fits {
+            for row in 0..<block.count {
+                let line = lines[block.lowerBound + row]
+                for (column, pad) in pads[row].enumerated() where pad != 0 {
+                    guard let anchor = kernAnchor(for: cells[row][column], line: line, in: storage) else { continue }
+                    let existing = (storage.attribute(.kern, at: anchor, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0
+                    storage.addAttribute(.kern, value: NSNumber(value: existing + pad), range: NSRange(location: anchor, length: 1))
+                }
+            }
+        }
+
+        guard isReading else { return }
+        if !fits {
+            // Unaligned, the cells need their pipes to stay apart.
+            for row in 0..<block.count where !isDelimiter[row] {
+                for cell in cells[row].dropLast() {
+                    storage.addAttribute(.foregroundColor, value: Palette.marker, range: NSRange(location: NSMaxRange(cell), length: 1))
+                }
+            }
+        }
+        let ruleWidth = NSNumber(value: fits ? tableWidth : textWidth)
+        for row in 0..<block.count {
+            let line = lines[block.lowerBound + row]
+            let range = NSRange(line.range)
+            guard range.length > 0 else { continue }
+            if isDelimiter[row] {
+                storage.addAttribute(.parchmentTableRule, value: ruleWidth, range: range)
+            } else if line.kind == .tableRow, !line.blockPosition.isLast {
+                storage.addAttribute(.parchmentTableRowRule, value: ruleWidth, range: range)
+            }
+        }
+    }
+
+    /// The text between a table line's unescaped pipes: before the first, between each pair,
+    /// and after the last.
+    private func cellRanges(of line: MarkdownLine) -> [NSRange] {
+        var cells: [NSRange] = []
+        var start = line.range.location
+        for index in line.range.range where text[index] == Self.pipe {
+            if index > line.range.location, text[index - 1] == Self.backslash { continue }
+            cells.append(NSRange(location: start, length: index - start))
+            start = index + 1
+        }
+        cells.append(NSRange(location: start, length: line.range.upperBound - start))
+        return cells
+    }
+
+    /// The character whose kern pads a cell: its last visible character, or the pipe before
+    /// it when the cell is empty or fully hidden. `nil` for an empty cell at the line start.
+    private func kernAnchor(for cell: NSRange, line: MarkdownLine, in storage: NSTextStorage) -> Int? {
+        var index = NSMaxRange(cell) - 1
+        while index >= cell.location {
+            if storage.attribute(.parchmentHidden, at: index, effectiveRange: nil) == nil { return index }
+            index -= 1
+        }
+        let previous = cell.location - 1
+        return previous >= line.range.location ? previous : nil
+    }
+
+    /// The width a range takes when laid out, leaving out characters reading mode hides.
+    private func visibleWidth(of range: NSRange, in storage: NSTextStorage) -> Double {
+        guard range.length > 0, NSMaxRange(range) <= storage.length else { return 0 }
+        let piece = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: range))
+        if isReading {
+            var hidden: [NSRange] = []
+            piece.enumerateAttribute(.parchmentHidden, in: NSRange(location: 0, length: piece.length), options: []) { value, subrange, _ in
+                if value != nil { hidden.append(subrange) }
+            }
+            for subrange in hidden.reversed() {
+                piece.deleteCharacters(in: subrange)
+            }
+        }
+        guard piece.length > 0 else { return 0 }
+        // Typographic bounds include trailing spaces, which take room between the pipes.
+        let line = CTLineCreateWithAttributedString(piece)
+        return CTLineGetTypographicBounds(line, nil, nil, nil)
+    }
+
+    private static let pipe: UInt16 = 124
+    private static let backslash: UInt16 = 92
 
     /// Image lines show their source in marker color. A loaded image reserves its height as
     /// paragraph spacing; the layout manager draws it there. On the document's last line,
@@ -401,8 +527,9 @@ final class MarkdownStyler {
         let ordered = spans.sorted { Self.rank($0.kind) < Self.rank($1.kind) }
         let isCode = line.kind.isCodeBlock
         let headingContentStart: Int? = if case .heading = line.kind { line.contentStart } else { nil }
-        // Inline symbols collapse in reading mode. Tables keep their pipes for alignment, and
-        // whole-line syntax (fences, rules, images) is styled per line instead.
+        // Inline symbols collapse in reading mode. Table pipes turn transparent instead, keeping
+        // the columns lined up, and whole-line syntax (fences, rules, images, the table's
+        // `---|---` row) is styled per line.
         let hidesInlineSyntax = isReading && Self.hidesInlineSyntax(line.kind)
         let hidden: [NSAttributedString.Key: Any] = [.parchmentHidden: NSNumber(value: true)]
 
@@ -415,7 +542,10 @@ final class MarkdownStyler {
                 // Fence lines keep their code colors, and the hanging heading `#`s stay accent.
                 if isCode { continue }
                 if let headingContentStart, span.range.location < headingContentStart { continue }
-                if hidesInlineSyntax {
+                if hidesInlineSyntax, line.kind.isTable, range.length == 1, text[range.location] == Self.pipe {
+                    // Pipes keep their width so columns stay lined up.
+                    storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+                } else if hidesInlineSyntax {
                     storage.addAttributes(hidden, range: range)
                 } else if isReading, Self.isWholeLineSyntax(line.kind) {
                     // The line style already decided its color (transparent, or marker for
@@ -513,14 +643,14 @@ final class MarkdownStyler {
 
     private static func hidesInlineSyntax(_ kind: LineKind) -> Bool {
         switch kind {
-        case .paragraph, .heading, .quote, .listItem, .task: true
+        case .paragraph, .heading, .quote, .listItem, .task, .tableHeader, .tableRow: true
         default: false
         }
     }
 
     private static func isWholeLineSyntax(_ kind: LineKind) -> Bool {
         switch kind {
-        case .fence, .rule, .image: true
+        case .fence, .rule, .image, .tableDelimiter: true
         default: false
         }
     }

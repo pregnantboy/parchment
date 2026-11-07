@@ -58,11 +58,10 @@ final class ParchmentTextView: NSTextView {
         isEditable = !isReading && !isAgentReadOnly
     }
 
-    /// Wax seals, filigree rules, a raised initial, a large quote mark and diamond bullets.
+    /// Wax seals, filigree rules, a large quote mark and diamond bullets.
     var ornaments = false {
         didSet {
             guard ornaments != oldValue else { return }
-            styler?.ornaments = ornaments
             markdownLayoutManager?.ornaments = ornaments
             restyleEverything()
         }
@@ -509,6 +508,8 @@ final class ParchmentTextView: NSTextView {
             let verticalInset = isTypewriterMode ? max(metrics.topInset, Double(height) / 2) : metrics.topInset
             baseContainerInset = NSSize(width: column.sideInset.rounded(.down), height: verticalInset.rounded())
             styler?.updateAvailableImageWidth(width - column.sideInset.rounded(.down) - column.gutter - Self.minimumSideInset)
+            // The text container tracks the view's width less the side insets.
+            styler?.updateTextWidth(width - 2 * column.sideInset.rounded(.down) - column.gutter)
         }
 
         if needsRestyle, let storage = textStorage, let styler {

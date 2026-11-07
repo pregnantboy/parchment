@@ -164,6 +164,12 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             if attributes[.parchmentRule] != nil {
                 self.drawRule(line, font: font, baseline: baseline, origin: origin, in: context)
             }
+            if let width = attributes[.parchmentTableRule] as? NSNumber, line.startsLine {
+                self.drawTableRule(at: line.rect.midY, width: CGFloat(width.doubleValue), color: Palette.marker, origin: origin, in: context)
+            }
+            if let width = attributes[.parchmentTableRowRule] as? NSNumber, line.endsLine {
+                self.drawTableRule(at: line.rect.maxY, width: CGFloat(width.doubleValue), color: Palette.rule, origin: origin, in: context)
+            }
             if self.ornaments, line.startsLine, let raw = attributes[.parchmentBlock] as? NSNumber {
                 let decoration = BlockDecoration(rawValue: raw.intValue)
                 if decoration.contains(.quote), decoration.contains(.isFirst) {
@@ -328,6 +334,15 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         context.restoreGState()
     }
 
+    // MARK: - Tables
+
+    /// A hairline across a table in reading mode, from the gutter edge.
+    private func drawTableRule(at y: CGFloat, width: CGFloat, color: NSColor, origin: NSPoint, in context: CGContext) {
+        guard width > 0 else { return }
+        color.setFill()
+        context.fill(CGRect(x: origin.x + gutter, y: (origin.y + y - 0.5).rounded(), width: width, height: 1))
+    }
+
     // MARK: - Ornaments
 
     /// A large, faint opening quote mark behind the start of a quote block.
@@ -369,8 +384,9 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
 
     // MARK: - Tasks
 
-    /// Replaces the transparent `[ ]` or `[x]` with a circle centered on the box glyphs and on
-    /// the text's cap-height midline.
+    /// Replaces the transparent `[ ]` or `[x]` with a circle on the text's cap-height midline.
+    /// It is centered on where an empty `[ ]` would sit, measured back from the box's right
+    /// edge, so checked and unchecked circles line up even though `x` is wider than a space.
     private func drawTaskCircle(boxRange: NSRange, isChecked: Bool, fragmentRect: CGRect, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
         guard let storage = textStorage, NSMaxRange(boxRange) <= storage.length else { return }
         let glyphs = glyphRange(forCharacterRange: boxRange, actualCharacterRange: nil)
@@ -380,7 +396,8 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
 
         let diameter = max(10, font.pointSize.rounded())
         let baseline = fragmentRect.minY + location(forGlyphAt: glyphs.location).y
-        let center = CGPoint(x: origin.x + boxRect.midX, y: origin.y + baseline - font.capHeight / 2)
+        let emptyBoxWidth = ("[ ]" as NSString).size(withAttributes: [.font: font]).width
+        let center = CGPoint(x: origin.x + boxRect.maxX - emptyBoxWidth / 2, y: origin.y + baseline - font.capHeight / 2)
         let circle = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
         let scale = font.pointSize / 18
         let lineStart = storage.mutableString.lineRange(for: NSRange(location: boxRange.location, length: 0)).location

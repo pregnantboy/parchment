@@ -57,8 +57,8 @@ public enum HookInstaller {
     /// then it saves the event and opens Parchment in the background (`open -g`).
     public static let script = """
     #!/bin/sh
-    # Passes Claude Code hook events to Parchment. Added by Parchment > Connect to Claude Code.
-    # Remove it with Parchment > Disconnect from Claude Code.
+    # Passes Claude Code hook events to Parchment. Added from Parchment > Settings > Claude Code.
+    # Remove it there with Disconnect.
     dir="$HOME/Library/Application Support/Parchment/Inbox"
     mkdir -p "$dir" || exit 0
     tmp="$dir/.$$.tmp"

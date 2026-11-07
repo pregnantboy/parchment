@@ -24,10 +24,6 @@ struct ParchmentCommands: Commands {
     }
 
     var body: some Commands {
-        CommandGroup(after: .appSettings) {
-            ClaudeConnectionMenuItem()
-        }
-
         CommandMenu("Format") {
             Group {
             Button("Bold") { editor?.perform(.bold) }
@@ -102,17 +98,6 @@ struct ParchmentCommands: Commands {
                 .keyboardShortcut("-", modifiers: .command)
             Button("Actual Size") { fontSize = EditorMetrics.defaultFontSize }
                 .keyboardShortcut("0", modifiers: [.command, .option])
-        }
-    }
-}
-
-/// "Connect to Claude Code…" or "Disconnect from Claude Code…", whichever applies.
-private struct ClaudeConnectionMenuItem: View {
-    var body: some View {
-        if AgentMonitor.shared.isConnected {
-            Button("Disconnect from Claude Code…") { ClaudeConnection.confirmDisconnect() }
-        } else {
-            Button("Connect to Claude Code…") { ClaudeConnection.confirmConnect() }
         }
     }
 }
