@@ -73,4 +73,13 @@ struct PlanTests {
         let change = TextChange.between(old: MarkdownText("a😀b"), new: MarkdownText("a😃b"))
         #expect(change == TextChange(oldRange: MarkdownRange(location: 1, length: 2), newRange: MarkdownRange(location: 1, length: 2)))
     }
+
+    @Test func offsetsMoveWithTheChange() {
+        let change = TextChange(oldRange: MarkdownRange(location: 5, length: 2), newRange: MarkdownRange(location: 5, length: 6))
+        #expect(change.map(3) == 3)
+        #expect(change.map(5) == 5)
+        #expect(change.map(6) == 11)
+        #expect(change.map(7) == 11)
+        #expect(change.map(10) == 14)
+    }
 }

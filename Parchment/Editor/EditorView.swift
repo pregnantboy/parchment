@@ -5,6 +5,8 @@ struct EditorView: NSViewRepresentable {
     let document: MarkdownDocument
     let fileURL: URL?
     let controller: EditorController
+    /// True while Claude Code is working on this file.
+    let isReadOnly: Bool
     let fontSize: Double
     let isFocusMode: Bool
     let isTypewriterMode: Bool
@@ -20,6 +22,7 @@ struct EditorView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         context.coordinator.makeScrollView(
             fileURL: fileURL,
+            isReadOnly: isReadOnly,
             isFocusMode: isFocusMode,
             isTypewriterMode: isTypewriterMode,
             undoManager: context.environment.undoManager

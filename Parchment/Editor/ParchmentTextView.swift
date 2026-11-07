@@ -124,6 +124,31 @@ final class ParchmentTextView: NSTextView {
         refreshFocusDimming()
     }
 
+    /// Replaces the text with a newer version from disk, changing only the part that differs, so
+    /// the rest keeps its styling and the selection stays put. The edit bypasses undo (undo
+    /// history is cleared, since its ranges no longer match), so the document is not marked as edited.
+    /// Returns the change, or `nil` when the text is the same.
+    @discardableResult
+    func applyExternalText(_ string: String) -> TextChange? {
+        guard let storage = textStorage, !hasMarkedText() else { return nil }
+        let new = MarkdownText(string)
+        guard let change = TextChange.between(old: currentMarkdownText(), new: new) else { return nil }
+
+        let selection = selectedRange()
+        undoManager?.removeAllActions()
+        storage.beginEditing()
+        storage.replaceCharacters(in: NSRange(change.oldRange), with: new.string(in: change.newRange))
+        storage.endEditing()
+
+        let start = change.map(selection.location)
+        let end = change.map(NSMaxRange(selection))
+        setSelectedRange(NSRange(location: start, length: max(0, end - start)))
+        styler?.restyle(storage, full: false)
+        lastFocusState = nil
+        refreshFocusDimming()
+        return change
+    }
+
     private var markdownLayoutManager: MarkdownLayoutManager? {
         layoutManager as? MarkdownLayoutManager
     }

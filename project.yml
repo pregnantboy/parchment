@@ -22,6 +22,9 @@ targets:
           - Info.plist
     dependencies:
       - package: ParchmentCore
+        product: ParchmentCore
+      - package: ParchmentCore
+        product: ParchmentAgent
     info:
       path: Parchment/Info.plist
       properties:

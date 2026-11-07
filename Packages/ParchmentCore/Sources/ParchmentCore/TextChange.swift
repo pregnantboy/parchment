@@ -45,6 +45,14 @@ public struct TextChange: Hashable, Sendable {
         )
     }
 
+    /// Where an offset in the old text ends up in the new text. Offsets inside the replaced
+    /// range move to its end.
+    public func map(_ location: Int) -> Int {
+        if location <= oldRange.location { return location }
+        if location >= oldRange.upperBound { return location + newRange.length - oldRange.length }
+        return newRange.upperBound
+    }
+
     private static func isHighSurrogate(_ unit: UInt16) -> Bool { unit >= 0xD800 && unit <= 0xDBFF }
     private static func isLowSurrogate(_ unit: UInt16) -> Bool { unit >= 0xDC00 && unit <= 0xDFFF }
 }

@@ -182,11 +182,12 @@ Verify: `swift test --package-path Packages/ParchmentCore` passes locally (if th
 
 ### Phase 2: Reload on change and read-only windows
 
-- [ ] `FileWatcher` and per-window watching in `EditorCoordinator` for windows with a `fileURL`.
-- [ ] `ParchmentTextView.applyExternalText(_:) -> TextChange?`: replace only the changed range, no undo, keep
+- [x] `FileWatcher` and per-window watching in `EditorCoordinator` for windows with a `fileURL`.
+- [x] `ParchmentTextView.applyExternalText(_:) -> TextChange?`: replace only the changed range, no undo, keep
       the user's selection and scroll position, restyle, update `document.text` and the controller.
-- [ ] Same diff path when SwiftUI hands the coordinator a new document instance for the same URL.
-- [ ] `isReadOnly` on the coordinator, driven later by the monitor; revert the NSDocument when it turns off.
+- [x] Same diff path when SwiftUI hands the coordinator a new document instance for the same URL.
+- [x] `isReadOnly` on `EditorView`, driven later by the monitor. Instead of reverting, every outside change
+      sets the NSDocument's `fileModificationDate`, so a later save does not warn.
 
 Files: `Parchment/Agent/FileWatcher.swift`, `Parchment/Editor/EditorCoordinator.swift`, `Parchment/Editor/ParchmentTextView.swift`
 Verify: CI builds. On the Mac: open a file, change it with `echo >> file.md` in Terminal, the window updates

@@ -21,6 +21,7 @@ struct DocumentWindowView: View {
             document: document,
             fileURL: fileURL,
             controller: controller,
+            isReadOnly: false,
             fontSize: fontSize,
             isFocusMode: isFocusMode,
             isTypewriterMode: isTypewriterMode
