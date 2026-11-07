@@ -20,13 +20,27 @@ Then press ⌘R in Xcode.
 
 ## Download a build without Xcode
 
-Every push builds the app on GitHub. Open the repository's Actions tab, pick the latest green "Build" run, and download the `Parchment.zip` artifact. Double-click it to get `Parchment.app`, then move that to Applications.
+Tagged versions are on the repository's Releases page. Every push also builds the app on GitHub: open the repository's Actions tab, pick the latest green "Build" run, and download the `Parchment.zip` artifact. Double-click it to get `Parchment.app`, then move that to Applications.
 
 The app is not signed with an Apple developer certificate, so macOS blocks the first launch. Right-click the app and choose Open, then confirm. Or run:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Parchment.app
 ```
+
+## Releasing
+
+Push a version tag. CI builds that version and publishes it as a GitHub Release with `Parchment.zip` attached:
+
+```bash
+git tag v1.0.0
+```
+
+```bash
+git push origin v1.0.0
+```
+
+The tag sets the version the app reports (here 1.0.0). The newest release is always at `releases/latest/download/Parchment.zip` in this repository.
 
 ## Keyboard shortcuts
 
