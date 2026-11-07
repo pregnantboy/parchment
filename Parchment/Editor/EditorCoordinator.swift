@@ -175,6 +175,25 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate {
         textView.editorSelectionDidChange()
     }
 
+    /// Keeps spelling and grammar underlines out of inline code and code blocks, where
+    /// identifiers like `noImplicitAny` are not misspellings.
+    func textView(_ textView: NSTextView, shouldSetSpellingState value: Int, range affectedCharRange: NSRange) -> Int {
+        guard value != 0, let storage = textView.textStorage,
+              affectedCharRange.location < storage.length else { return value }
+        let clamped = NSIntersectionRange(affectedCharRange, NSRange(location: 0, length: storage.length))
+        var isCode = false
+        storage.enumerateAttributes(in: clamped, options: []) { attributes, _, stop in
+            if attributes[.parchmentInlineCode] != nil {
+                isCode = true
+            } else if let raw = attributes[.parchmentBlock] as? NSNumber,
+                      BlockDecoration(rawValue: raw.intValue).contains(.code) {
+                isCode = true
+            }
+            if isCode { stop.pointee = true }
+        }
+        return isCode ? 0 : value
+    }
+
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard let editor = textView as? ParchmentTextView else { return false }
         return editor.handleCommand(commandSelector)

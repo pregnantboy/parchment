@@ -375,8 +375,16 @@ final class MarkdownStyler {
                 transformFonts(in: range, of: storage) { FontBook.shared.mono(size: Double($0.pointSize) * 0.88) }
                 storage.addAttributes([
                     .foregroundColor: Palette.accent,
-                    .backgroundColor: Palette.inlineCodeBackground,
+                    .parchmentInlineCode: NSNumber(value: true),
                 ], range: range)
+                // Room for the pill's side padding, so it never touches the faint backticks.
+                // The kern after the opening backtick pads the left; after the last code
+                // character, the right.
+                let padding = NSNumber(value: Double(MarkdownLayoutManager.inlineCodePadding))
+                if range.location > 0 {
+                    storage.addAttribute(.kern, value: padding, range: NSRange(location: range.location - 1, length: 1))
+                }
+                storage.addAttribute(.kern, value: padding, range: NSRange(location: NSMaxRange(range) - 1, length: 1))
 
             case .linkText(let destination):
                 var linkAttributes: [NSAttributedString.Key: Any] = [

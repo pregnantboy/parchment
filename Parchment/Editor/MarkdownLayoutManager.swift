@@ -1,7 +1,7 @@
 import AppKit
 
-/// Draws the decorations that make the Ink look: code block backgrounds, quote bars, rule
-/// lines, task circles, and inline images.
+/// Draws the decorations that make the Ink look: code block backgrounds, inline code pills,
+/// quote bars, rule lines, task circles, and inline images.
 ///
 /// `NSLayoutManager` is not main-actor isolated, so this class is `nonisolated` and its drawing
 /// reads only the text storage's attributes, `Palette`, `BlockDecoration`, `FontBook`, and its
@@ -9,6 +9,13 @@ import AppKit
 nonisolated final class MarkdownLayoutManager: NSLayoutManager {
     /// The hanging gutter width, in container coordinates. Code backgrounds and quote bars align to it.
     var gutter: CGFloat = 64
+
+    /// Horizontal padding inside an inline code pill. The styler kerns the characters around
+    /// the code by the same amount so the pill has room.
+    static let inlineCodePadding: CGFloat = 4
+    private static let inlineCodeRadius: CGFloat = 5
+    /// How far the pill reaches above the ascender and below the descender.
+    private static let inlineCodeVerticalPadding: CGFloat = 1
 
     private static let codeBlockOverhang: CGFloat = 22
     private static let codeBlockRadius: CGFloat = 12
@@ -62,6 +69,10 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
                let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle {
                 self.drawImage(image, line: line, paragraph: paragraph, origin: origin, in: context)
             }
+            storage.enumerateAttribute(.parchmentInlineCode, in: charRange, options: []) { value, codeRange, _ in
+                guard value != nil else { return }
+                self.drawInlineCodePill(codeRange, fragmentRect: rect, container: container, origin: origin, in: context)
+            }
             storage.enumerateAttribute(.parchmentTaskBox, in: charRange, options: []) { value, boxRange, _ in
                 guard let isChecked = (value as? NSNumber)?.boolValue else { return }
                 self.drawTaskCircle(boxRange: boxRange, isChecked: isChecked, fragmentRect: rect, container: container, origin: origin, in: context)
@@ -100,6 +111,54 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager {
         context.addPath(Self.roundedPath(shape, radius: Self.codeBlockRadius))
         context.fillPath()
         context.restoreGState()
+    }
+
+    // MARK: - Inline code
+
+    /// Draws a rounded pill behind the part of an inline code span that sits on this line
+    /// fragment. `enumerateAttribute` already clamps `codeRange` to the fragment, so wrapped
+    /// code gets one snug pill per line instead of a slab reaching into the margin.
+    private func drawInlineCodePill(_ codeRange: NSRange, fragmentRect: CGRect, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
+        guard let storage = textStorage else { return }
+        let characters = storage.mutableString
+
+        // Spaces at a wrap point hang past the line's edge; keep them out of the pill.
+        var lower = codeRange.location
+        var upper = NSMaxRange(codeRange)
+        while lower < upper, Self.isSpace(characters.character(at: lower)) { lower += 1 }
+        while upper > lower, Self.isSpace(characters.character(at: upper - 1)) { upper -= 1 }
+        guard upper > lower else { return }
+        let visible = NSRange(location: lower, length: upper - lower)
+
+        let glyphs = glyphRange(forCharacterRange: visible, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return }
+        let bounds = boundingRect(forGlyphRange: glyphs, in: container)
+        let font = (storage.attribute(.font, at: lower, effectiveRange: nil) as? NSFont) ?? FontBook.shared.mono(size: 15)
+        let baseline = fragmentRect.minY + location(forGlyphAt: glyphs.location).y
+
+        // The trailing kern only exists on the span's last character, so a piece that
+        // continues onto the next line gets its right padding here instead.
+        let endsSpan = upper == NSMaxRange(codeRange) && Self.hasKern(storage, at: upper - 1)
+        let left = bounds.minX - Self.inlineCodePadding
+        let right = endsSpan ? bounds.maxX : bounds.maxX + Self.inlineCodePadding
+        let top = baseline - font.ascender - Self.inlineCodeVerticalPadding
+        let bottom = baseline - font.descender + Self.inlineCodeVerticalPadding
+        let pill = CGRect(x: origin.x + left, y: origin.y + top, width: right - left, height: bottom - top)
+
+        context.saveGState()
+        Palette.inlineCodeBackground.setFill()
+        context.addPath(Self.roundedPath(pill, radius: Self.inlineCodeRadius))
+        context.fillPath()
+        context.restoreGState()
+    }
+
+    private static func isSpace(_ character: unichar) -> Bool {
+        character == 32 || character == 9 || character == 10 || character == 13
+    }
+
+    private static func hasKern(_ storage: NSTextStorage, at index: Int) -> Bool {
+        guard index >= 0, index < storage.length else { return false }
+        return storage.attribute(.kern, at: index, effectiveRange: nil) != nil
     }
 
     // MARK: - Quotes

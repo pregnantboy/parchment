@@ -10,6 +10,9 @@ nonisolated extension NSAttributedString.Key {
     static let parchmentImage = NSAttributedString.Key("app.parchment.image")
     /// Value: `String` URL, on the link text and its destination.
     static let parchmentLink = NSAttributedString.Key("app.parchment.link")
+    /// Value: `NSNumber(true)`, on the text of an inline code span (not its backticks).
+    /// The layout manager draws a rounded pill behind it, one per line when it wraps.
+    static let parchmentInlineCode = NSAttributedString.Key("app.parchment.inlineCode")
     /// Value: `NSNumber(true)`, on a rule line.
     static let parchmentRule = NSAttributedString.Key("app.parchment.rule")
 }
