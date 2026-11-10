@@ -149,9 +149,28 @@ final class MarkdownStyler {
         bodyParagraph(spacingAfter: metrics.paragraphSpacing)
     }
 
+    /// Typing attributes follow the caret's line. Inline predictions and input methods draw
+    /// their marked text with them, so plain body attributes would shrink a word being typed
+    /// in a heading until it is committed.
     private func updateTypingAttributes() {
         guard let textView, !textView.hasMarkedText() else { return }
-        textView.typingAttributes = bodyAttributes
+        textView.typingAttributes = typingAttributes(at: textView.selectedRange().location)
+    }
+
+    /// Body attributes, with the font, paragraph style and tracking of the character before
+    /// `location` on its line (or the line's first character when `location` starts it).
+    private func typingAttributes(at location: Int) -> [NSAttributedString.Key: Any] {
+        var result = bodyAttributes
+        guard let storage = textView?.textStorage, location != NSNotFound,
+              location <= storage.length, !lines.isEmpty else { return result }
+        let lineRange = NSRange(lines[lineIndex(containing: location)].range)
+        guard lineRange.length > 0, NSMaxRange(lineRange) <= storage.length else { return result }
+        let source = location > lineRange.location ? min(location, NSMaxRange(lineRange)) - 1 : lineRange.location
+        let attributes = storage.attributes(at: source, effectiveRange: nil)
+        for key in [NSAttributedString.Key.font, .paragraphStyle, .tracking] {
+            if let value = attributes[key] { result[key] = value }
+        }
+        return result
     }
 
     /// Restyles the lines at `indices`. A table's columns depend on all of its rows, so a
@@ -388,6 +407,7 @@ final class MarkdownStyler {
     /// as typed. In reading mode, rules go under the header and between rows.
     private func alignTable(_ block: Range<Int>, in storage: NSTextStorage) {
         guard !block.isEmpty else { return }
+        if isReading, showRenderedTable(block, in: storage) { return }
         let cells = block.map { cellRanges(of: lines[$0]) }
         let widths = cells.map { $0.map { visibleWidth(of: $0, in: storage) } }
         let isDelimiter = block.map { lines[$0].kind == .tableDelimiter }
@@ -450,6 +470,38 @@ final class MarkdownStyler {
                 storage.addAttribute(.parchmentTableRowRule, value: ruleWidth, range: range)
             }
         }
+    }
+
+    /// Reading mode shows a table as a grid drawn by `TableRenderer`. Its source lines shrink
+    /// to hairlines of transparent text, and the last one reserves the grid's height as
+    /// paragraph spacing, where the layout manager draws it like an image. Returns false when
+    /// the table can't be rendered, leaving the aligned text in place.
+    private func showRenderedTable(_ block: Range<Int>, in storage: NSTextStorage) -> Bool {
+        let source = block.map { text.string(in: lines[$0].range) }.joined(separator: "\n")
+        let width = textWidth.isFinite ? textWidth : metrics.measure
+        guard let rendered = TableRenderer.shared.render(source, width: width, fontSize: metrics.fontSize) else { return false }
+
+        let tiny = FontBook.shared.text(size: 1)
+        for index in block {
+            let line = lines[index]
+            let fullRange = NSRange(line.fullRange)
+            guard fullRange.length > 0, NSMaxRange(fullRange) <= storage.length else { continue }
+            let isLast = index == block.upperBound - 1
+            let paragraph = paragraphStyle(ParagraphKey(
+                firstLineHeadIndent: gutter,
+                headIndent: gutter,
+                lineSpacing: 0,
+                spacingBefore: 0,
+                spacingAfter: isLast ? rendered.height + Self.imageVerticalPadding : 0
+            ))
+            storage.addAttributes([.font: tiny, .foregroundColor: NSColor.clear, .paragraphStyle: paragraph], range: fullRange)
+            storage.removeAttribute(.kern, range: fullRange)
+            let lineRange = NSRange(line.range)
+            if isLast, lineRange.length > 0 {
+                storage.addAttributes([.parchmentImage: rendered.image, .parchmentTable: NSNumber(value: true)], range: lineRange)
+            }
+        }
+        return true
     }
 
     /// The text between a table line's unescaped pipes: before the first, between each pair,

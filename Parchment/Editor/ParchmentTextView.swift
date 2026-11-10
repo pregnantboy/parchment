@@ -554,7 +554,7 @@ final class ParchmentTextView: NSTextView {
 
     /// The image on the last line when that line has no line break, with the height the styler
     /// sized it to and the paragraph spacing it reserved for it.
-    private func trailingImage() -> (image: NSImage, height: CGFloat, spacing: CGFloat)? {
+    private func trailingImage() -> (image: NSImage, height: CGFloat, spacing: CGFloat, isTable: Bool)? {
         guard let storage = textStorage, storage.length > 0 else { return nil }
         let last = storage.length - 1
         let character = storage.mutableString.character(at: last)
@@ -564,7 +564,7 @@ final class ParchmentTextView: NSTextView {
               let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle else { return nil }
         let height = paragraph.paragraphSpacing - Self.imageTopGap * 2
         guard height > 1, image.size.width > 0, image.size.height > 0 else { return nil }
-        return (image, height, paragraph.paragraphSpacing)
+        return (image, height, paragraph.paragraphSpacing, attributes[.parchmentTable] != nil)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -592,7 +592,8 @@ final class ParchmentTextView: NSTextView {
         )
         guard destination.intersects(dirtyRect) else { return }
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: destination, xRadius: Self.imageRadius, yRadius: Self.imageRadius).addClip()
+        let radius = trailing.isTable ? 0 : Self.imageRadius
+        NSBezierPath(roundedRect: destination, xRadius: radius, yRadius: radius).addClip()
         trailing.image.draw(
             in: destination,
             from: .zero,

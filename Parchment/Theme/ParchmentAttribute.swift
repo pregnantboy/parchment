@@ -27,4 +27,7 @@ nonisolated extension NSAttributedString.Key {
     /// Value: `NSNumber(Double width)`, on a table row (not the last) in reading mode. The
     /// layout manager draws a faint rule below it.
     static let parchmentTableRowRule = NSAttributedString.Key("app.parchment.tableRowRule")
+    /// Value: `NSNumber(true)`, next to `parchmentImage` when that image is a rendered table.
+    /// Tables are drawn with square corners so their borders aren't clipped.
+    static let parchmentTable = NSAttributedString.Key("app.parchment.table")
 }
