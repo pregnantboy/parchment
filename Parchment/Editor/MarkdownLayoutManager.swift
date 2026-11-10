@@ -178,7 +178,8 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             }
             if line.endsWithBreak, let image = attributes[.parchmentImage] as? NSImage,
                let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle {
-                self.drawImage(image, line: line, paragraph: paragraph, origin: origin, in: context)
+                let radius = attributes[.parchmentTable] == nil ? Self.imageRadius : 0
+                self.drawImage(image, radius: radius, line: line, paragraph: paragraph, origin: origin, in: context)
             }
             storage.enumerateAttribute(.parchmentInlineCode, in: charRange, options: []) { value, codeRange, _ in
                 guard value != nil else { return }
@@ -493,7 +494,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
 
     /// Draws an image in the paragraph spacing the styler reserved below its line. The spacing
     /// is the image height plus 24pt of padding, so the size is recovered from it exactly.
-    private func drawImage(_ image: NSImage, line: LineFragment, paragraph: NSParagraphStyle, origin: NSPoint, in context: CGContext) {
+    private func drawImage(_ image: NSImage, radius: CGFloat, line: LineFragment, paragraph: NSParagraphStyle, origin: NSPoint, in context: CGContext) {
         let size = image.size
         let height = paragraph.paragraphSpacing - Self.imageTopGap * 2
         guard size.width > 0, size.height > 0, height > 1 else { return }
@@ -506,7 +507,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         )
 
         context.saveGState()
-        context.addPath(Self.roundedPath(destination, radius: Self.imageRadius))
+        context.addPath(Self.roundedPath(destination, radius: radius))
         context.clip()
         image.draw(
             in: destination,

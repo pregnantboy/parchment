@@ -11,6 +11,9 @@ settings:
 packages:
   ParchmentCore:
     path: Packages/ParchmentCore
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.4.1
 targets:
   Parchment:
     type: application
@@ -25,6 +28,7 @@ targets:
         product: ParchmentCore
       - package: ParchmentCore
         product: ParchmentAgent
+      - package: MarkdownUI
     info:
       path: Parchment/Info.plist
       properties:
