@@ -39,7 +39,8 @@ final class MarkdownStyler {
     /// Horizontal room for images, measured from the gutter edge to the window's right side.
     private var availableImageWidth = Double.infinity
     /// Horizontal room for text, from the gutter edge to the right edge of the column. A table
-    /// wider than this is left as typed, since its wrapped rows can't line up.
+    /// wider than this wraps its last column; if the earlier columns alone don't fit, it is
+    /// left as typed, since its wrapped rows can't line up.
     private var textWidth = Double.infinity
     private var paragraphCache: [ParagraphKey: NSParagraphStyle] = [:]
     private var widthCache: [WidthKey: Double] = [:]
@@ -403,55 +404,71 @@ final class MarkdownStyler {
     // MARK: - Table columns
 
     /// Lines up a table's columns: the last visible character of each cell is kerned so the
-    /// pipe after it sits at the same x on every row. A table too wide for the column is left
-    /// as typed. In reading mode, rules go under the header and between rows.
+    /// pipe after it sits at the same x on every row. When the table is too wide for the
+    /// column, the earlier columns still line up and each row's last cell wraps under itself.
+    /// Only a table whose earlier columns alone don't fit is left as typed. In reading mode,
+    /// rules go under the header and between rows.
     private func alignTable(_ block: Range<Int>, in storage: NSTextStorage) {
         guard !block.isEmpty else { return }
         if isReading, showRenderedTable(block, in: storage) { return }
         let cells = block.map { cellRanges(of: lines[$0]) }
         let widths = cells.map { $0.map { visibleWidth(of: $0, in: storage) } }
         let isDelimiter = block.map { lines[$0].kind == .tableDelimiter }
-        let gap = (metrics.fontSize * 0.5).rounded()
-
-        // Where each line's current cell starts, and the kern each cell needs.
-        var starts = [Double](repeating: 0, count: block.count)
-        var pads: [[Double]] = cells.map { [Double](repeating: 0, count: $0.count) }
-        let columnCount = cells.map(\.count).max() ?? 0
-        // Every cell but a line's last is followed by a pipe, so it can be padded.
-        for column in 0..<max(0, columnCount - 1) {
-            var end = 0.0
-            for row in 0..<block.count where !isDelimiter[row] && column < cells[row].count - 1 {
-                end = max(end, starts[row] + widths[row][column])
-            }
-            if end > 0 { end += gap }
-            for row in 0..<block.count where column < cells[row].count - 1 {
-                let natural = starts[row] + widths[row][column]
-                let canPad = kernAnchor(for: cells[row][column], line: lines[block.lowerBound + row], in: storage) != nil
-                let pad = canPad ? end - natural : 0
-                pads[row][column] = pad
-                let pipe = NSRange(location: NSMaxRange(cells[row][column]), length: 1)
-                starts[row] = natural + pad + visibleWidth(of: pipe, in: storage)
-            }
+        // The last cell with text: the one before a closing pipe, or the line's last cell.
+        let lastColumn: [Int] = cells.indices.map { row in
+            let count = cells[row].count
+            let closed = count > 1 && isBlank(cells[row][count - 1])
+            return closed ? count - 2 : count - 1
         }
 
-        var tableWidth = 0.0
-        for row in 0..<block.count where !isDelimiter[row] {
-            tableWidth = max(tableWidth, starts[row] + (widths[row].last ?? 0))
+        var layout = columnLayout(cells: cells, widths: widths, isDelimiter: isDelimiter, lastColumn: lastColumn, wrapsLast: false, in: block, storage: storage)
+        var wraps = false
+        if layout.width > textWidth {
+            let wrapped = columnLayout(cells: cells, widths: widths, isDelimiter: isDelimiter, lastColumn: lastColumn, wrapsLast: true, in: block, storage: storage)
+            // The last column needs room for a few words before wrapping is worth it.
+            let minimumLastColumn = metrics.fontSize * 8
+            if wrapped.lastColumnStart + minimumLastColumn <= textWidth {
+                layout = wrapped
+                wraps = true
+            }
         }
-        let fits = tableWidth <= textWidth
-        if fits {
+        let aligned = wraps || layout.width <= textWidth
+
+        if aligned {
             for row in 0..<block.count {
                 let line = lines[block.lowerBound + row]
-                for (column, pad) in pads[row].enumerated() where pad != 0 {
+                for (column, pad) in layout.pads[row].enumerated() where pad != 0 {
                     guard let anchor = kernAnchor(for: cells[row][column], line: line, in: storage) else { continue }
                     let existing = (storage.attribute(.kern, at: anchor, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0
                     storage.addAttribute(.kern, value: NSNumber(value: existing + pad), range: NSRange(location: anchor, length: 1))
                 }
             }
         }
+        if wraps {
+            // A wrapped row's later lines start where its last cell's text starts.
+            for row in 0..<block.count where !isDelimiter[row] {
+                let line = lines[block.lowerBound + row]
+                let column = lastColumn[row]
+                guard column > 0, column < cells[row].count else { continue }
+                let cell = cells[row][column]
+                let hang = layout.cellStarts[row][column] + leadingSpaceWidth(of: cell, in: storage)
+                let range = NSRange(line.fullRange)
+                guard range.length > 0,
+                      let current = storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle
+                else { continue }
+                let style = paragraphStyle(ParagraphKey(
+                    firstLineHeadIndent: Double(current.firstLineHeadIndent),
+                    headIndent: gutter + hang,
+                    lineSpacing: Double(current.lineSpacing),
+                    spacingBefore: Double(current.paragraphSpacingBefore),
+                    spacingAfter: Double(current.paragraphSpacing)
+                ))
+                storage.addAttribute(.paragraphStyle, value: style, range: range)
+            }
+        }
 
         guard isReading else { return }
-        if !fits {
+        if !aligned {
             // Unaligned, the cells need their pipes to stay apart.
             for row in 0..<block.count where !isDelimiter[row] {
                 for cell in cells[row].dropLast() {
@@ -459,7 +476,7 @@ final class MarkdownStyler {
                 }
             }
         }
-        let ruleWidth = NSNumber(value: fits ? tableWidth : textWidth)
+        let ruleWidth = NSNumber(value: aligned && !wraps ? layout.width : textWidth)
         for row in 0..<block.count {
             let line = lines[block.lowerBound + row]
             let range = NSRange(line.range)
@@ -502,6 +519,86 @@ final class MarkdownStyler {
             }
         }
         return true
+    }
+
+    /// Where a table's cells land once its columns are lined up.
+    private struct ColumnLayout {
+        /// The kern each cell needs after its last visible character.
+        var pads: [[Double]]
+        /// The x at which each cell starts, from the start of the row.
+        var cellStarts: [[Double]]
+        /// The widest row once padded, measured on rows with text.
+        var width: Double
+        /// The furthest x at which a row's last cell starts.
+        var lastColumnStart: Double
+    }
+
+    /// Pads every cell but a line's last so the pipes after it line up. With `wrapsLast`, each
+    /// row's last cell with text is left unpadded and doesn't push the columns before it, so
+    /// it can wrap.
+    private func columnLayout(
+        cells: [[NSRange]],
+        widths: [[Double]],
+        isDelimiter: [Bool],
+        lastColumn: [Int],
+        wrapsLast: Bool,
+        in block: Range<Int>,
+        storage: NSTextStorage
+    ) -> ColumnLayout {
+        let rows = cells.count
+        let gap = (metrics.fontSize * 0.5).rounded()
+        var starts = [Double](repeating: 0, count: rows)
+        var pads: [[Double]] = cells.map { [Double](repeating: 0, count: $0.count) }
+        var cellStarts: [[Double]] = cells.map { [Double](repeating: 0, count: $0.count) }
+        let columnCount = cells.map(\.count).max() ?? 0
+        let isFree = { (row: Int, column: Int) in wrapsLast && column >= lastColumn[row] }
+        for column in 0..<max(0, columnCount - 1) {
+            var end = 0.0
+            for row in 0..<rows where !isDelimiter[row] && column < cells[row].count - 1 && !isFree(row, column) {
+                end = max(end, starts[row] + widths[row][column])
+            }
+            if end > 0 { end += gap }
+            for row in 0..<rows where column < cells[row].count - 1 {
+                cellStarts[row][column] = starts[row]
+                let natural = starts[row] + widths[row][column]
+                let canPad = !isFree(row, column)
+                    && kernAnchor(for: cells[row][column], line: lines[block.lowerBound + row], in: storage) != nil
+                let pad = canPad ? end - natural : 0
+                pads[row][column] = pad
+                let pipe = NSRange(location: NSMaxRange(cells[row][column]), length: 1)
+                starts[row] = natural + pad + visibleWidth(of: pipe, in: storage)
+            }
+        }
+        var width = 0.0
+        var lastColumnStart = 0.0
+        for row in 0..<rows where !isDelimiter[row] {
+            if let last = cells[row].indices.last {
+                cellStarts[row][last] = starts[row]
+            }
+            width = max(width, starts[row] + (widths[row].last ?? 0))
+            let column = lastColumn[row]
+            if column >= 0, column < cellStarts[row].count {
+                lastColumnStart = max(lastColumnStart, cellStarts[row][column])
+            }
+        }
+        return ColumnLayout(pads: pads, cellStarts: cellStarts, width: width, lastColumnStart: lastColumnStart)
+    }
+
+    /// Whether a cell holds nothing but spaces and tabs.
+    private func isBlank(_ cell: NSRange) -> Bool {
+        for index in cell.location..<NSMaxRange(cell) where text[index] != Self.space && text[index] != Self.tab {
+            return false
+        }
+        return true
+    }
+
+    /// The width of the spaces at the start of a cell, so wrapped text lines up with its words.
+    private func leadingSpaceWidth(of cell: NSRange, in storage: NSTextStorage) -> Double {
+        var end = cell.location
+        while end < NSMaxRange(cell), text[end] == Self.space || text[end] == Self.tab {
+            end += 1
+        }
+        return visibleWidth(of: NSRange(location: cell.location, length: end - cell.location), in: storage)
     }
 
     /// The text between a table line's unescaped pipes: before the first, between each pair,
@@ -550,6 +647,8 @@ final class MarkdownStyler {
     }
 
     private static let pipe: UInt16 = 124
+    private static let space: UInt16 = 32
+    private static let tab: UInt16 = 9
     private static let backslash: UInt16 = 92
 
     /// Image lines show their source in marker color. A loaded image reserves its height as
