@@ -8,13 +8,17 @@ public struct MarkdownLine: Hashable, Sendable {
     /// Where inline content starts, after any block syntax such as `## ` or `- [ ] `.
     public var contentStart: Int
     public var blockPosition: BlockPosition
+    /// True when the line carries on the paragraph, list item or quote on the line above,
+    /// as a hard-wrapped line does. Markdown joins the two with a space.
+    public var isContinuation: Bool
 
-    public init(range: MarkdownRange, lineBreakLength: Int, kind: LineKind, contentStart: Int, blockPosition: BlockPosition = .none) {
+    public init(range: MarkdownRange, lineBreakLength: Int, kind: LineKind, contentStart: Int, blockPosition: BlockPosition = .none, isContinuation: Bool = false) {
         self.range = range
         self.lineBreakLength = lineBreakLength
         self.kind = kind
         self.contentStart = contentStart
         self.blockPosition = blockPosition
+        self.isContinuation = isContinuation
     }
 
     /// The line including its line break, which is what paragraph attributes must cover.

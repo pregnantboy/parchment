@@ -2,7 +2,7 @@
 public enum LineDiff {
     /// Indices into `newLines` that differ from `oldLines`.
     ///
-    /// Lines are compared by text, kind, line break and block position, so a change that
+    /// Lines are compared by text, kind, line break, block position and continuation, so a change that
     /// alters a neighbour's role (like opening a code fence) widens the range automatically.
     public static func changedLines(
         old oldText: MarkdownText,
@@ -28,6 +28,7 @@ public enum LineDiff {
               old.range.length == new.range.length,
               old.lineBreakLength == new.lineBreakLength,
               old.blockPosition == new.blockPosition,
+              old.isContinuation == new.isContinuation,
               old.contentStart - old.range.location == new.contentStart - new.range.location else {
             return false
         }

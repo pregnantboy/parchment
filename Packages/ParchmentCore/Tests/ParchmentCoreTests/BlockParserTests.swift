@@ -100,9 +100,39 @@ struct BlockParserTests {
     }
 
     @Test func blockPositionsGroupRelatedLines() {
-        let source = "```\ncode\n```\n> one\n> two\ntext"
+        let source = "```\ncode\n```\n> one\n> two\n\ntext"
         let positions = MarkdownParser.lines(in: MarkdownText(source)).map(\.blockPosition)
-        #expect(positions == [.first, .middle, .last, .first, .last, .none])
+        #expect(positions == [.first, .middle, .last, .first, .last, .none, .none])
+    }
+
+    @Test func aPlainLineRightAfterAQuoteBelongsToIt() {
+        let source = "> one\ntwo"
+        let positions = MarkdownParser.lines(in: MarkdownText(source)).map(\.blockPosition)
+        #expect(positions == [.first, .last])
+    }
+
+    private func continuations(_ source: String) -> [Bool] {
+        MarkdownParser.lines(in: MarkdownText(source)).map(\.isContinuation)
+    }
+
+    @Test func hardWrappedLinesContinueTheirParagraph() {
+        #expect(continuations("one\ntwo\nthree") == [false, true, true])
+        #expect(continuations("- item\n  wrapped\n- next") == [false, true, false])
+        #expect(continuations("- [ ] task\nwrapped") == [false, true])
+        #expect(continuations("1. item\nwrapped") == [false, true])
+        #expect(continuations("> one\n> two\nthree") == [false, true, true])
+    }
+
+    @Test func continuationsStopAtOtherBlocks() {
+        #expect(continuations("one\n\ntwo") == [false, false, false])
+        #expect(continuations("# Title\ntext") == [false, false])
+        #expect(continuations("text\n# Title") == [false, false])
+        #expect(continuations("text\n- item") == [false, false])
+        #expect(continuations("- \ntext") == [false, false])
+        #expect(continuations(">\n> two") == [false, false])
+        #expect(continuations("text\n> quote") == [false, false])
+        #expect(continuations("```\na\nb\n```") == [false, false, false, false])
+        #expect(continuations("text\n| a | b |\n|---|---|") == [false, false, false])
     }
 
     @Test func backToBackCodeBlocksStaySeparate() {

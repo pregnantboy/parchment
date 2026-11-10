@@ -47,6 +47,7 @@ public enum MarkdownParser {
         }
 
         markTables(in: &result, text: text)
+        markContinuations(in: &result)
         assignBlockPositions(in: &result)
         return result
     }
@@ -271,6 +272,30 @@ public enum MarkdownParser {
         return sawPipe && sawHyphen
     }
 
+    /// Marks the lines that carry on the paragraph above them. A plain line continues a
+    /// paragraph, list item or quote; a quote line continues the quote. A blank line, an empty
+    /// item, or any other kind of line ends the paragraph, as in CommonMark.
+    private static func markContinuations(in lines: inout [MarkdownLine]) {
+        // The kind of the line that started the open paragraph, if one is open.
+        var head: LineKind?
+        for index in lines.indices {
+            let line = lines[index]
+            let hasContent = !line.contentRange.isEmpty
+            if let head, hasContent {
+                if line.kind == .paragraph || (line.kind == .quote && head == .quote) {
+                    lines[index].isContinuation = true
+                    continue
+                }
+            }
+            switch line.kind {
+            case .paragraph, .listItem, .task, .quote:
+                head = hasContent ? line.kind : nil
+            default:
+                head = nil
+            }
+        }
+    }
+
     private enum Group {
         case code, quote, table
     }
@@ -285,15 +310,20 @@ public enum MarkdownParser {
     }
 
     /// Marks each line as the first, middle, or last line of its code block, quote, or table.
+    /// A plain line that continues a quote belongs to the quote.
     private static func assignBlockPositions(in lines: inout [MarkdownLine]) {
+        var groups = lines.map(group(of:))
+        for index in lines.indices.dropFirst() where lines[index].isContinuation && groups[index - 1] == .quote {
+            groups[index] = .quote
+        }
         var start = 0
         while start < lines.count {
-            guard let kind = group(of: lines[start]) else {
+            guard let kind = groups[start] else {
                 start += 1
                 continue
             }
             var end = start + 1
-            while end < lines.count, group(of: lines[end]) == kind {
+            while end < lines.count, groups[end] == kind {
                 // A new opening fence or table header starts a new block.
                 if case .fence(_, true) = lines[end].kind { break }
                 if lines[end].kind == .tableHeader { break }

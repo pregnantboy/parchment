@@ -180,7 +180,7 @@ final class MarkdownStyler {
         guard !indices.isEmpty else { return }
         var all = IndexSet()
         var tables: [Range<Int>] = []
-        for index in indices where index >= 0 && index < lines.count && !all.contains(index) {
+        for index in withParagraphs(indices) where !all.contains(index) {
             if lines[index].kind.isTable {
                 let table = tableBlock(containing: index)
                 tables.append(table)
@@ -191,12 +191,135 @@ final class MarkdownStyler {
         }
         storage.beginEditing()
         for index in all {
-            style(lines[index], in: storage)
+            style(at: index, in: storage)
         }
         for table in tables {
             alignTable(table, in: storage)
         }
+        // Each line's style covers its own line break, so the breaks are marked last.
+        for index in all {
+            styleBreak(before: index, in: storage)
+        }
         storage.endEditing()
+    }
+
+    // MARK: - Hard-wrapped paragraphs
+
+    /// The lines of a hard-wrapped paragraph style one another: a continuation takes its
+    /// indent from the paragraph's first line, and a line's spacing depends on whether the next
+    /// line continues it. So restyling a line restyles its whole paragraph and the line above.
+    private func withParagraphs(_ indices: IndexSet) -> IndexSet {
+        var result = IndexSet()
+        for index in indices where index >= 0 && index < lines.count && !result.contains(index) {
+            let head = paragraphHead(of: index)
+            result.insert(integersIn: head...paragraphTail(of: index))
+            if head > 0 { result.insert(head - 1) }
+        }
+        return result
+    }
+
+    /// The first line of the paragraph that holds line `index`.
+    private func paragraphHead(of index: Int) -> Int {
+        var head = index
+        while head > 0, lines[head].isContinuation { head -= 1 }
+        return head
+    }
+
+    /// The last line of the paragraph that holds line `index`.
+    private func paragraphTail(of index: Int) -> Int {
+        var tail = index
+        while continues(after: tail) { tail += 1 }
+        return tail
+    }
+
+    private func continues(after index: Int) -> Bool {
+        index + 1 < lines.count && lines[index + 1].isContinuation
+    }
+
+    /// The space after line `index`, given the space `normal` puts after a line of its kind.
+    /// While editing, the lines of one paragraph sit close together, with the space only after
+    /// the last. Reading mode lays them out as one paragraph, so each line carries the space
+    /// the paragraph ends with.
+    private func spacingAfter(line index: Int, _ normal: (MarkdownLine) -> Double) -> Double {
+        if isReading { return normal(lines[paragraphTail(of: index)]) }
+        return continues(after: index) ? 0 : normal(lines[index])
+    }
+
+    /// In reading mode, marks the line break before a continuation so the layout manager lays it
+    /// out as a space. Two spaces at the end of the line above keep the break, as in Markdown.
+    private func styleBreak(before index: Int, in storage: NSTextStorage) {
+        guard index > 0, index < lines.count else { return }
+        let above = lines[index - 1]
+        let range = NSRange(location: above.range.upperBound, length: above.lineBreakLength)
+        guard range.length > 0, NSMaxRange(range) <= storage.length else { return }
+        guard isReading, lines[index].isContinuation else {
+            storage.removeAttribute(.parchmentSoftBreak, range: range)
+            return
+        }
+        let end = above.range.upperBound
+        let keepsLineBreak = above.range.length >= 2 && text[end - 1] == Self.space && text[end - 2] == Self.space
+        storage.addAttribute(.parchmentSoftBreak, value: NSNumber(value: keepsLineBreak), range: range)
+    }
+
+    /// Styles a plain line that continues the paragraph, list item or quote above it. While
+    /// editing it lines up under that block's text, its leading spaces hanging to the left. In
+    /// reading mode those spaces are hidden and the line flows on from the one above.
+    private func styleContinuation(at index: Int, in storage: NSTextStorage) {
+        let line = lines[index]
+        let head = lines[paragraphHead(of: index)]
+        let font: NSFont
+        let indent: Double
+        let lineSpacing: Double
+        let spacing: Double
+        switch head.kind {
+        case .listItem, .task:
+            font = FontBook.shared.text(size: metrics.fontSize)
+            indent = listTextIndent(of: head)
+            lineSpacing = metrics.lineSpacing
+            spacing = spacingAfter(line: index) { _ in listSpacingAfter }
+        case .quote:
+            let size = quoteFontSize
+            font = FontBook.shared.text(size: size, weight: .semibold)
+            indent = gutter + Self.quoteTextOffset
+            lineSpacing = (size * 0.35).rounded()
+            spacing = spacingAfter(line: index) { $0.blockPosition.isLast ? metrics.paragraphSpacing : 0 }
+        default:
+            font = FontBook.shared.text(size: metrics.fontSize)
+            indent = gutter
+            lineSpacing = metrics.lineSpacing
+            spacing = spacingAfter(line: index) { _ in metrics.paragraphSpacing }
+        }
+
+        let leading = width(of: text.string(in: line.prefixRange), font: font)
+        let paragraph = paragraphStyle(ParagraphKey(
+            firstLineHeadIndent: isReading ? indent : max(0, indent - leading),
+            headIndent: indent,
+            lineSpacing: lineSpacing,
+            spacingBefore: 0,
+            spacingAfter: spacing
+        ))
+        let fullRange = NSRange(line.fullRange)
+        storage.setAttributes(attributes(font: font, color: Palette.ink, paragraph: paragraph), range: fullRange)
+        if head.kind == .quote {
+            storage.addAttribute(.parchmentBlock, value: NSNumber(value: Self.decoration(.quote, position: line.blockPosition).rawValue), range: fullRange)
+        }
+    }
+
+    /// Hides a continuation's leading spaces (and a quote line's `>`) in reading mode, and
+    /// strikes it through when it continues a ticked task.
+    private func finishContinuation(at index: Int, in storage: NSTextStorage) {
+        let line = lines[index]
+        if case .task(isChecked: true) = lines[paragraphHead(of: index)].kind, !line.contentRange.isEmpty {
+            storage.addAttributes([
+                .strikethroughStyle: NSNumber(value: NSUnderlineStyle.single.rawValue),
+                .strikethroughColor: Palette.muted,
+                .foregroundColor: Palette.muted,
+            ], range: NSRange(line.contentRange))
+        }
+        let prefix = NSRange(line.prefixRange)
+        guard isReading, prefix.length > 0 else { return }
+        storage.removeAttribute(.kern, range: prefix)
+        storage.addAttribute(.parchmentHidden, value: NSNumber(value: true), range: prefix)
     }
 
     /// The lines of the table that holds line `index`, from its header to its last row.
@@ -250,7 +373,8 @@ final class MarkdownStyler {
 
     // MARK: - Line styles
 
-    private func style(_ line: MarkdownLine, in storage: NSTextStorage) {
+    private func style(at index: Int, in storage: NSTextStorage) {
+        let line = lines[index]
         let fullRange = NSRange(line.fullRange)
         guard fullRange.length > 0, NSMaxRange(fullRange) <= storage.length else { return }
         let body = FontBook.shared.text(size: metrics.fontSize)
@@ -259,17 +383,21 @@ final class MarkdownStyler {
         case .blank:
             storage.setAttributes(attributes(font: body, color: Palette.ink, paragraph: bodyParagraph(spacingAfter: 0)), range: fullRange)
 
+        case .paragraph where line.isContinuation:
+            styleContinuation(at: index, in: storage)
+
         case .paragraph:
-            storage.setAttributes(attributes(font: body, color: Palette.ink, paragraph: bodyParagraph(spacingAfter: metrics.paragraphSpacing)), range: fullRange)
+            let spacing = spacingAfter(line: index) { _ in metrics.paragraphSpacing }
+            storage.setAttributes(attributes(font: body, color: Palette.ink, paragraph: bodyParagraph(spacingAfter: spacing)), range: fullRange)
 
         case .heading(let level):
             styleHeading(line, level: level, in: storage)
 
         case .listItem, .task:
-            styleListItem(line, in: storage)
+            styleListItem(at: index, in: storage)
 
         case .quote:
-            styleQuote(line, in: storage)
+            styleQuote(at: index, in: storage)
 
         case .fence:
             // Reading mode keeps the fence lines as padding inside the block, but blank.
@@ -293,6 +421,9 @@ final class MarkdownStyler {
         }
 
         applySpans(MarkdownParser.spans(for: line, in: text), line: line, in: storage)
+        if line.isContinuation {
+            finishContinuation(at: index, in: storage)
+        }
     }
 
     private func styleHeading(_ line: MarkdownLine, level: Int, in storage: NSTextStorage) {
@@ -323,37 +454,51 @@ final class MarkdownStyler {
 
     /// Lists and tasks hang their whole prefix (indent, marker, and box) in the gutter, and
     /// nested items move the text edge right by 1.5em per four columns of indentation.
-    private func styleListItem(_ line: MarkdownLine, in storage: NSTextStorage) {
+    private func styleListItem(at index: Int, in storage: NSTextStorage) {
+        let line = lines[index]
         let body = FontBook.shared.text(size: metrics.fontSize)
         let prefix = text.string(in: line.prefixRange)
-        let nesting = Double(Self.indentColumns(of: prefix)) * metrics.fontSize * 0.375
-        let headIndent = gutter + nesting
+        let headIndent = listTextIndent(of: line)
         let paragraph = paragraphStyle(ParagraphKey(
             firstLineHeadIndent: max(0, headIndent - width(of: prefix, font: body)),
             headIndent: headIndent,
             lineSpacing: metrics.lineSpacing,
             spacingBefore: 0,
-            spacingAfter: (metrics.paragraphSpacing * 0.35).rounded()
+            spacingAfter: spacingAfter(line: index) { _ in listSpacingAfter }
         ))
         storage.setAttributes(attributes(font: body, color: Palette.ink, paragraph: paragraph), range: NSRange(line.fullRange))
     }
 
+    /// Where a list item's text starts: the gutter edge, moved right for nested items.
+    private func listTextIndent(of line: MarkdownLine) -> Double {
+        let nesting = Double(Self.indentColumns(of: text.string(in: line.prefixRange))) * metrics.fontSize * 0.375
+        return gutter + nesting
+    }
+
+    private var listSpacingAfter: Double {
+        (metrics.paragraphSpacing * 0.35).rounded()
+    }
+
+    private var quoteFontSize: Double {
+        metrics.fontSize * 1.28
+    }
+
     /// Quotes are set larger and semibold. The `>` hangs left of the bar at the gutter edge,
     /// and a kern on the last prefix character carries the text to its indented edge.
-    private func styleQuote(_ line: MarkdownLine, in storage: NSTextStorage) {
-        let size = metrics.fontSize * 1.28
+    private func styleQuote(at index: Int, in storage: NSTextStorage) {
+        let line = lines[index]
+        let size = quoteFontSize
         let font = FontBook.shared.text(size: size, weight: .semibold)
         let prefixWidth = width(of: text.string(in: line.prefixRange), font: font)
         let firstIndent = max(0, gutter - Self.quoteMarkerGap - prefixWidth)
         let textEdge = gutter + Self.quoteTextOffset
-        let isLast = line.blockPosition.isLast
 
         let paragraph = paragraphStyle(ParagraphKey(
             firstLineHeadIndent: firstIndent,
             headIndent: textEdge,
             lineSpacing: (size * 0.35).rounded(),
             spacingBefore: 0,
-            spacingAfter: isLast ? metrics.paragraphSpacing : 0
+            spacingAfter: spacingAfter(line: index) { $0.blockPosition.isLast ? metrics.paragraphSpacing : 0 }
         ))
         storage.setAttributes(attributes(font: font, color: Palette.ink, paragraph: paragraph), range: NSRange(line.fullRange))
         storage.addAttribute(.parchmentBlock, value: NSNumber(value: Self.decoration(.quote, position: line.blockPosition).rawValue), range: NSRange(line.fullRange))
