@@ -105,7 +105,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
 
     // MARK: - Hard-wrapped paragraphs
 
-    /// In reading mode, a line break marked `parchmentSoftBreak` joins a hard-wrapped line to
+    /// A line break marked `parchmentSoftBreak` joins a hard-wrapped line to
     /// the one above: it is laid out as a space (or, after a Markdown hard break, as a line
     /// break inside the paragraph), so the joined lines share one paragraph and its indent.
     func layoutManager(
