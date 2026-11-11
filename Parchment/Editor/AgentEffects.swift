@@ -134,8 +134,8 @@ extension ParchmentTextView {
         }
         agentEffects.marks.append(AgentEffects.Mark(range: lines, start: now))
 
-        // A box Claude ticked: "[ ]" became "[x]".
-        if replaced == " ", range.length == 1, NSMaxRange(range) <= storage.length,
+        // A box Claude ticked: "[ ]", "[/]" or "[!]" became "[x]".
+        if [" ", "/", "!"].contains(replaced), range.length == 1, NSMaxRange(range) <= storage.length,
            text.substring(with: range).lowercased() == "x" {
             var box = NSRange(location: NSNotFound, length: 0)
             if storage.attribute(.parchmentTaskBox, at: range.location, effectiveRange: &box) != nil,

@@ -11,13 +11,14 @@ public struct ListPrefix: Hashable, Sendable {
     public var marker: Marker
     /// The marker and the spaces after it, such as `- ` or `12. `.
     public var markerRange: MarkdownRange
-    /// The `[ ]` or `[x]` of a task item.
+    /// The `[ ]`, `[/]`, `[!]` or `[x]` of a task item.
     public var taskBox: MarkdownRange?
-    public var isChecked: Bool
+    public var taskState: TaskState
     /// Where the item's own text starts.
     public var contentStart: Int
 
     public var isTask: Bool { taskBox != nil }
+    public var isChecked: Bool { taskState.isDone }
 
     /// The marker the next item should use, without indentation.
     public var continuation: String {
@@ -53,7 +54,7 @@ public struct ListPrefix: Hashable, Sendable {
                 marker: .quote,
                 markerRange: MarkdownRange(location: index, length: contentStart - index),
                 taskBox: nil,
-                isChecked: false,
+                taskState: .open,
                 contentStart: contentStart
             )
         }
@@ -85,16 +86,16 @@ public struct ListPrefix: Hashable, Sendable {
         let markerRange = MarkdownRange(location: index, length: contentStart - index)
 
         var taskBox: MarkdownRange?
-        var isChecked = false
+        var taskState = TaskState.open
         if contentStart + 2 < end,
            text[contentStart] == Unit.openBracket,
            text[contentStart + 2] == Unit.closeBracket {
             let mark = text[contentStart + 1]
             let afterBox = contentStart + 3
             let boxIsTerminated = afterBox >= end || text[afterBox] == Unit.space || text[afterBox] == Unit.tab
-            if boxIsTerminated, mark == Unit.space || mark == Unit.lowerX || mark == Unit.upperX {
+            if boxIsTerminated, let state = TaskState(mark: mark) {
                 taskBox = MarkdownRange(location: contentStart, length: 3)
-                isChecked = mark != Unit.space
+                taskState = state
                 contentStart = afterBox
                 while contentStart < end, text[contentStart] == Unit.space || text[contentStart] == Unit.tab {
                     contentStart += 1
@@ -107,7 +108,7 @@ public struct ListPrefix: Hashable, Sendable {
             marker: marker,
             markerRange: markerRange,
             taskBox: taskBox,
-            isChecked: isChecked,
+            taskState: taskState,
             contentStart: contentStart
         )
     }

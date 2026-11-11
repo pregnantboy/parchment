@@ -11,8 +11,8 @@ public enum SpanKind: Hashable, Sendable {
     case linkDestination(destination: String)
     case listMarker
     case quoteMarker
-    /// The `[ ]` or `[x]` of a task list item.
-    case taskBox(isChecked: Bool)
+    /// The `[ ]`, `[/]`, `[!]` or `[x]` of a task list item.
+    case taskBox(TaskState)
     /// The text of a checked task.
     case completedTask
     case tableHeader

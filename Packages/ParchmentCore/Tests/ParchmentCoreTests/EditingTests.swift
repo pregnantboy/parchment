@@ -126,6 +126,14 @@ struct EditingTests {
         #expect(MarkdownEditing.toggleTaskBox(at: 0, in: text, selection: selection) == nil)
     }
 
+    @Test func togglingABlockedOrInProgressBoxTicksIt() {
+        for mark in ["!", "/"] {
+            let (text, selection) = parse("- [\(mark)] a|")
+            let edit = MarkdownEditing.toggleTaskBox(at: 2, in: text, selection: selection)
+            #expect(edit.map { $0.applied(to: text) } == "- [x] a")
+        }
+    }
+
     // MARK: Auto-pairing
 
     @Test func pairsBrackets() {

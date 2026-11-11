@@ -9,12 +9,14 @@ enum ClaudeConnection {
         alert.messageText = "Connect Parchment to Claude Code?"
         alert.informativeText = """
         Parchment will add the hook below to \(monitor.settingsPath), so Claude Code tells Parchment \
-        which plan it is writing and what it is doing. Your other settings stay as they are, and a \
-        backup is saved next to the file.
+        which plan it is writing and what it is doing. It also adds a short note to \
+        \(monitor.memoryPath) asking Claude to mark plan tasks as in progress [/], blocked [!] or \
+        done [x] as it works. Everything else in both files stays as it is, and a backup of each \
+        is saved next to it.
 
         Claude Code sessions that are already running need a restart to pick this up.
         """
-        alert.accessoryView = codeView(monitor.hookPreview)
+        alert.accessoryView = codeView("\(monitor.settingsPath)\n\n\(monitor.hookPreview)\n\(monitor.memoryPath)\n\n\(InstructionsInstaller.instructions)")
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -29,7 +31,7 @@ enum ClaudeConnection {
         let monitor = AgentMonitor.shared
         let alert = NSAlert()
         alert.messageText = "Disconnect Parchment from Claude Code?"
-        alert.informativeText = "Parchment will remove only its own hook from \(monitor.settingsPath). Plans already open stay open."
+        alert.informativeText = "Parchment will remove only its own hook from \(monitor.settingsPath) and its own note from \(monitor.memoryPath). Plans already open stay open."
         alert.addButton(withTitle: "Disconnect")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }

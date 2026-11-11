@@ -47,11 +47,18 @@ public struct PlanProgress: Sendable, Equatable {
     public static func make(steps: [PlanStep], todos: [AgentTodo], lastEdit: (location: Int, owner: String)?) -> PlanProgress {
         let matched = matchedInProgressTodos(todos, steps: steps)
 
-        // 1. Checkboxes in the file.
+        // 1. Checkboxes in the file. Steps marked `[/]` are current; otherwise Claude's
+        // in-progress todos, then the first open step. Blocked steps are never guessed.
         if steps.contains(where: \.isTask) {
             let done = steps.count { $0.isChecked }
-            var current = matched.filter { !steps[$0.index].isChecked }
-            if current.isEmpty, let first = steps.firstIndex(where: { !$0.isChecked }) {
+            let owners = Dictionary(matched.map { ($0.index, $0.owner) }, uniquingKeysWith: { first, _ in first })
+            var current = steps.indices
+                .filter { steps[$0].taskState == .inProgress }
+                .map { CurrentStep(index: $0, owner: owners[$0] ?? nil) }
+            if current.isEmpty {
+                current = matched.filter { steps[$0.index].taskState == .open }
+            }
+            if current.isEmpty, let first = steps.firstIndex(where: { $0.taskState == .open }) {
                 current = [CurrentStep(index: first, owner: nil)]
             }
             return PlanProgress(

@@ -146,6 +146,16 @@ struct ProgressTests {
         #expect(!progress.isComplete)
     }
 
+    @Test func inProgressBoxesAreCurrentAndBlockedOnesAreSkipped() {
+        let plan = steps("- [x] Parse hook events\n- [!] Sign the app\n- [ ] Draw the pill\n- [/] Draw margin marks")
+        let progress = PlanProgress.make(steps: plan, todos: [], lastEdit: nil)
+        #expect(progress.label == .count(done: 1, total: 4))
+        #expect(progress.currentSteps == [PlanProgress.CurrentStep(index: 3, owner: nil)])
+
+        let noneStarted = steps("- [!] Sign the app\n- [ ] Draw the pill")
+        #expect(PlanProgress.make(steps: noneStarted, todos: [], lastEdit: nil).currentSteps == [PlanProgress.CurrentStep(index: 1, owner: nil)])
+    }
+
     @Test func inProgressTodosPointAtTheirSteps() {
         let plan = steps("- [ ] Parse hook events\n- [ ] Draw the status pill\n- [ ] Draw margin marks")
         let todos = [
@@ -283,5 +293,19 @@ struct PlumbingTests {
         #expect(HookInstaller.script.hasPrefix("#!/bin/sh\n"))
         #expect(HookInstaller.script.contains("open -g -b app.parchment.Parchment"))
         #expect(HookInstaller.script.contains(#"\.(md|markdown)"#))
+    }
+
+    @Test func instructionsAreAddedOnceAndRemovedCleanly() {
+        let mine = "# My rules\n\nUse tabs.\n"
+        let once = InstructionsInstaller.installing(into: mine)
+        #expect(InstructionsInstaller.installing(into: once) == once)
+        #expect(once.hasPrefix(mine))
+        #expect(InstructionsInstaller.isInstalled(in: once))
+        #expect(once.contains("- [!] Deploy (blocked: needs an API key)"))
+        #expect(InstructionsInstaller.removing(from: once) == mine)
+
+        #expect(InstructionsInstaller.installing(into: nil) == InstructionsInstaller.block)
+        #expect(InstructionsInstaller.removing(from: InstructionsInstaller.block) == "")
+        #expect(InstructionsInstaller.removing(from: mine) == mine)
     }
 }

@@ -313,7 +313,7 @@ final class MarkdownStyler {
     /// strikes it through when it continues a ticked task.
     private func finishContinuation(at index: Int, in storage: NSTextStorage) {
         let line = lines[index]
-        if case .task(isChecked: true) = lines[paragraphHead(of: index)].kind, !line.contentRange.isEmpty {
+        if case .task(.done) = lines[paragraphHead(of: index)].kind, !line.contentRange.isEmpty {
             storage.addAttributes([
                 .strikethroughStyle: NSNumber(value: NSUnderlineStyle.single.rawValue),
                 .strikethroughColor: Palette.muted,
@@ -925,10 +925,10 @@ final class MarkdownStyler {
             case .quoteMarker:
                 storage.addAttribute(.foregroundColor, value: isReading ? NSColor.clear : Palette.marker, range: range)
 
-            case .taskBox(let isChecked):
+            case .taskBox(let state):
                 storage.addAttributes([
                     .foregroundColor: NSColor.clear,
-                    .parchmentTaskBox: NSNumber(value: isChecked),
+                    .parchmentTaskBox: NSNumber(value: state.rawValue),
                 ], range: range)
 
             case .tableHeader:

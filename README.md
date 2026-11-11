@@ -56,6 +56,7 @@ The tag sets the version the app reports (here 1.0.0). The newest release is alw
 Parchment can show the plan Claude Code is working on, live, when Claude Code runs in a terminal on the same Mac.
 
 1. Open **Parchment > Settings** (⌘,) and click **Connect…** under Claude Code. Parchment shows the hook it adds to `~/.claude/settings.json` and saves a backup next to it. Restart any Claude Code sessions that are already running.
+   It also adds a short note to `~/.claude/CLAUDE.md` asking Claude to keep each task's box up to date (see below).
 2. Work with Claude Code as usual. When it writes a plan (in plan mode, or any Markdown file in a `plans` folder or with "plan" in its name), Parchment opens it in the background, one window per session.
 
 While Claude works on the file, the window is read-only and shows:
@@ -65,9 +66,22 @@ While Claude works on the file, the window is read-only and shows:
 - **The progress line** at the top shows plan progress, with a glint while Claude works.
 - **In the text:** new text inks in, changed lines get a vermilion mark in the margin, Claude's caret shows where it last wrote, the current task's circle pulses, ticked boxes fill in, and steps a helper works on are tagged with its name.
 
+### Task states
+
+Plans can mark each task with one of four boxes. Claude updates them as it works, and you can too:
+
+| Markdown | Meaning | Shown as |
+|---|---|---|
+| `- [ ]` | Not started | Empty circle |
+| `- [/]` | In progress | Half-filled vermilion circle |
+| `- [!]` | Blocked | Vermilion circle with a bar. Add the reason after the task, like `(blocked: needs an API key)` |
+| `- [x]` | Done | Filled circle (a wax seal with Ornaments on), text struck through |
+
+Clicking a circle ticks it, or unticks a done task. `[/]` and `[!]` are a common extension of Markdown: other apps, including GitHub, show them as plain text.
+
 **View > Follow Claude** scrolls to each change (it pauses for a few seconds after you scroll). **View > Stop Following Claude** makes the window an ordinary editable document. The window also becomes editable when the session ends. Turning on Reduce Motion in System Settings stops all the animation.
 
-To undo the setup, click **Disconnect…** in the same place; it removes only Parchment's hook.
+To undo the setup, click **Disconnect…** in the same place; it removes only Parchment's hook and its note in `CLAUDE.md`.
 
 ## Keyboard shortcuts
 

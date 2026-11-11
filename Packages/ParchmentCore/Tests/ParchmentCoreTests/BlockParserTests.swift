@@ -54,8 +54,11 @@ struct BlockParserTests {
     @Test func listsTasksAndQuotes() {
         #expect(kinds("- item") == [.listItem(isOrdered: false)])
         #expect(kinds("12. item") == [.listItem(isOrdered: true)])
-        #expect(kinds("- [ ] todo") == [.task(isChecked: false)])
-        #expect(kinds("* [x] done") == [.task(isChecked: true)])
+        #expect(kinds("- [ ] todo") == [.task(.open)])
+        #expect(kinds("* [x] done") == [.task(.done)])
+        #expect(kinds("- [/] going") == [.task(.inProgress)])
+        #expect(kinds("1. [!] stuck") == [.task(.blocked)])
+        #expect(kinds("- [?] unknown") == [.listItem(isOrdered: false)])
         #expect(kinds("> quoted") == [.quote])
         #expect(kinds("-not a list") == [.paragraph])
         #expect(kinds("1.5 million") == [.paragraph])
