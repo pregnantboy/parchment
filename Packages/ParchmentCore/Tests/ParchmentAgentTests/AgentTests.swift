@@ -194,6 +194,77 @@ struct ProgressTests {
         #expect(progress.currentSteps.isEmpty)
     }
 
+    @Test func startedTasksCountAsHalf() {
+        let progress = PlanProgress.make(steps: steps("- [x] a\n- [/] b\n- [!] c\n- [ ] d"), todos: [], lastEdit: nil)
+        #expect(progress.segments == [
+            .init(state: .done, fill: 1), .init(state: .inProgress, fill: 0.5),
+            .init(state: .blocked, fill: 0), .init(state: .open, fill: 0)
+        ])
+        #expect(progress.fraction == 0.375)
+        #expect(progress.percentText == "38%")
+        #expect(!progress.isEstimate)
+    }
+
+    @Test func subStepsFillTheirParent() {
+        let plan = steps("- [ ] Build the pill\n  - [x] Layout\n  - [x] Colors\n  - [ ] Shimmer\n  - [ ] Timer\n- [ ] Ship it\n- [x] Plan it\n  - [ ] Left unticked")
+        let progress = PlanProgress.make(steps: plan, todos: [], lastEdit: nil)
+        // Every checkbox still counts in "3 of 8"; the bar has one piece per top-level task.
+        #expect(progress.label == .count(done: 3, total: 8))
+        #expect(progress.segments == [
+            .init(state: .inProgress, fill: 0.5), .init(state: .open, fill: 0), .init(state: .done, fill: 1)
+        ])
+        #expect(progress.fraction == 0.5)
+
+        // All sub-steps ticked, parent not: nearly full, never full.
+        let almost = PlanProgress.make(steps: steps("- [ ] a\n  - [x] b\n  - [x] c"), todos: [], lastEdit: nil)
+        #expect(almost.segments == [.init(state: .inProgress, fill: 0.9)])
+        #expect(!almost.isComplete)
+
+        let blocked = PlanProgress.make(steps: steps("- [ ] a\n  - [!] b\n  - [ ] c"), todos: [], lastEdit: nil)
+        #expect(blocked.segments == [.init(state: .blocked, fill: 0)])
+    }
+
+    @Test func todosFillTheTaskInProgress() {
+        let plan = steps("- [x] Parse hook events\n- [/] Draw the status pill\n- [ ] Ship it")
+        let breakdown = [
+            AgentTodo(id: "1", content: "Measure the capsule", status: .completed),
+            AgentTodo(id: "2", content: "Add the shimmer band", status: .completed),
+            AgentTodo(id: "3", content: "Wire up reduce motion", status: .completed),
+            AgentTodo(id: "4", content: "Check dark mode", status: .inProgress)
+        ]
+        let progress = PlanProgress.make(steps: plan, todos: breakdown, lastEdit: nil)
+        #expect(progress.segments[1] == .init(state: .inProgress, fill: 0.75))
+        #expect(progress.label == .count(done: 1, total: 3))
+
+        // A todo list that repeats the plan's tasks says nothing about the inside of one.
+        let mirror = [
+            AgentTodo(id: "1", content: "Parse the hook events", status: .completed),
+            AgentTodo(id: "2", content: "Draw status pill", status: .inProgress),
+            AgentTodo(id: "3", content: "Ship it", status: .pending)
+        ]
+        #expect(PlanProgress.make(steps: plan, todos: mirror, lastEdit: nil).segments[1].fill == 0.5)
+
+        // Two tasks in progress: the todos cannot be pinned on one.
+        let two = steps("- [/] Draw the status pill\n- [/] Ship it")
+        #expect(PlanProgress.make(steps: two, todos: breakdown, lastEdit: nil).segments.map(\.fill) == [0.5, 0.5])
+    }
+
+    @Test func todoListsAndGuessesGetSegmentsToo() {
+        let todos = [
+            AgentTodo(id: "1", content: "a", status: .completed),
+            AgentTodo(id: "2", content: "b", status: .inProgress),
+            AgentTodo(id: "3", content: "c", status: .pending)
+        ]
+        let fromTodos = PlanProgress.make(steps: [], todos: todos, lastEdit: nil)
+        #expect(fromTodos.segments.map(\.fill) == [1, 0.5, 0])
+        #expect(fromTodos.fraction == 0.5)
+
+        let guess = PlanProgress.make(steps: steps("1. Install\n2. Configure\n3. Ship"), todos: [], lastEdit: (12, "Claude"))
+        #expect(guess.segments.map(\.state) == [.done, .inProgress, .open])
+        #expect(guess.isEstimate)
+        #expect(PlanProgress.empty.percentText == nil)
+    }
+
     @Test func matcherNeedsRealOverlap() {
         let plan = steps("- [ ] Reload the file when it changes\n- [ ] Install the hook")
         #expect(StepMatcher.bestStep(for: ["Reloading files on change"], in: plan) == 0)

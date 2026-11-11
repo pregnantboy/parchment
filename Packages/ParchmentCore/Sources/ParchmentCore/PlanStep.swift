@@ -15,12 +15,16 @@ public struct PlanStep: Hashable, Sendable, Identifiable {
     /// From the step's line to the start of the next step (or the end of the document).
     /// Edits inside it count as work on this step.
     public var section: MarkdownRange
+    /// Columns of leading whitespace (a tab counts as four). A task indented further than the
+    /// task before it is one of that task's sub-steps.
+    public var indent: Int
 
-    public init(kind: Kind, title: String, range: MarkdownRange, section: MarkdownRange) {
+    public init(kind: Kind, title: String, range: MarkdownRange, section: MarkdownRange, indent: Int = 0) {
         self.kind = kind
         self.title = title
         self.range = range
         self.section = section
+        self.indent = indent
     }
 
     public var isTask: Bool {
@@ -93,7 +97,8 @@ public enum PlanSteps {
                 kind: kind,
                 title: OutlineHeading.cleanTitle(text.string(in: line.contentRange)),
                 range: line.range,
-                section: MarkdownRange(location: line.range.location, length: max(0, end - line.range.location))
+                section: MarkdownRange(location: line.range.location, length: max(0, end - line.range.location)),
+                indent: indentation(of: line, in: text)
             )
         }
     }
@@ -102,7 +107,7 @@ public enum PlanSteps {
         var count = 0
         var index = line.range.location
         while index < line.range.upperBound, text[index] == Unit.space || text[index] == Unit.tab {
-            count += 1
+            count += text[index] == Unit.tab ? 4 : 1
             index += 1
         }
         return count

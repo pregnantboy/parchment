@@ -94,7 +94,12 @@ struct DocumentWindowView: View {
             inkEffect: inkEffect
         )
         .overlay(alignment: .top) {
-            if let status {
+            if let status, !status.progress.segments.isEmpty {
+                SegmentedProgressBar(progress: status.progress, glints: status.isWorking)
+                    .frame(height: 4)
+                    .padding(.horizontal, 3)
+                    .padding(.top, 1)
+            } else if let status {
                 ProgressLine(progress: status.lineFraction, glints: status.isWorking)
             } else {
                 ProgressLine(progress: controller.scrollProgress)

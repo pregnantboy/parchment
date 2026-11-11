@@ -48,11 +48,15 @@ struct AgentTimeline: View {
                 }
                 Spacer()
                 if let progress = status.progressText {
-                    Text(progress)
+                    Text([progress, status.progress.percentText].compactMap { $0 }.joined(separator: " · "))
                         .font(.system(size: 12))
                         .monospacedDigit()
                         .foregroundStyle(Color.parchmentMuted)
                 }
+            }
+            if !status.progress.segments.isEmpty {
+                SegmentedProgressBar(progress: status.progress, glints: status.isWorking)
+                    .frame(height: 6)
             }
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 summary(at: context.date)

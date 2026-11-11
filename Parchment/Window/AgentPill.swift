@@ -53,13 +53,23 @@ struct AgentPill: View {
             }
         }
         .modifier(CappedWidth(limit: 520))
-        .padding(.horizontal, headline.detail == nil ? 14 : 18)
+        // The bar takes the text's width, so it never stretches the pill.
+        .padding(.bottom, hasBar ? 7 : 0)
+        .overlay(alignment: .bottom) {
+            if hasBar {
+                SegmentedProgressBar(progress: status.progress)
+                    .frame(height: 3)
+            }
+        }
+        .padding(.horizontal, headline.detail == nil && !hasBar ? 14 : 18)
         .padding(.vertical, 7)
         .glassEffect(.regular, in: .capsule)
         .contentShape(.capsule)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Shows what Claude has done")
     }
+
+    private var hasBar: Bool { !status.progress.segments.isEmpty }
 
     private func label(_ headline: SessionHeadline, at date: Date) -> some View {
         HStack(spacing: 8) {
