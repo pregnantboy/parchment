@@ -29,7 +29,7 @@ Then press ⌘R in Xcode.
 
 ## Download a build without Xcode
 
-Tagged versions are on the repository's Releases page. Every push also builds the app on GitHub: open the repository's Actions tab, pick the latest green "Build" run, and download the `Parchment.zip` artifact. Double-click it to get `Parchment.app`, then move that to Applications.
+Released versions are on the repository's Releases page: download `Parchment.dmg`, open it, and drag Parchment onto the Applications shortcut next to it. Every push also builds the app on GitHub: open the repository's Actions tab, pick the latest green "Build" run, and download the `Parchment.dmg` artifact.
 
 The app is not signed with an Apple developer certificate, so macOS blocks the first launch. Right-click the app and choose Open, then confirm. Or run:
 
@@ -39,17 +39,15 @@ xattr -dr com.apple.quarantine /Applications/Parchment.app
 
 ## Releasing
 
-Push a version tag. CI builds that version and publishes it as a GitHub Release with `Parchment.zip` attached:
+Publish a release on GitHub: on the Releases page choose **Draft a new release**, pick or create a tag like `v1.0.0`, write the notes and click **Publish release**. CI then builds that version and attaches `Parchment.dmg` to the release a few minutes later.
+
+From a terminal, this does the same:
 
 ```bash
-git tag v1.0.0
+gh release create v1.0.0 --generate-notes
 ```
 
-```bash
-git push origin v1.0.0
-```
-
-The tag sets the version the app reports (here 1.0.0). The newest release is always at `releases/latest/download/Parchment.zip` in this repository.
+The tag sets the version the app reports (here 1.0.0). Pushing a tag alone publishes nothing; the release is what starts the build. The newest release is always at `releases/latest/download/Parchment.dmg` in this repository.
 
 ## Watching Claude Code plans
 
