@@ -12,10 +12,10 @@ struct StatusPill: View {
     var body: some View {
         content
             .font(.system(size: 12, design: .serif))
-            .foregroundStyle(Color.parchmentPaper)
+            .foregroundStyle(Color.parchmentInk)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(Color.parchmentInk, in: .capsule)
+            .glassEffect(.regular, in: .capsule)
             .opacity(isVisible ? 1 : 0)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isVisible)
             .accessibilityElement(children: .combine)

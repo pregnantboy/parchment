@@ -5,8 +5,8 @@ nonisolated struct EditorMetrics: Equatable, Sendable {
     static let defaultFontSize = 15.0
     static let fontSizeRange = 12.0...28.0
     /// Body line height as a multiple of the text size.
-    static let defaultLineHeight = 1.5
-    static let lineHeightRange = 1.2...2.2
+    static let defaultLineHeight = 1.2
+    static let lineHeightRange = 0.8...2.2
 
     let fontSize: Double
     let lineHeight: Double
@@ -14,6 +14,9 @@ nonisolated struct EditorMetrics: Equatable, Sendable {
     let gutter: Double
     let codeFontSize: Double
     let lineSpacing: Double
+    /// The tallest a body line may be, or 0 for no limit. Set only when `lineHeight` is tighter
+    /// than the font's own line height, since `lineSpacing` can only add space.
+    let maxLineHeight: Double
     let paragraphSpacing: Double
     let topInset: Double
 
@@ -29,7 +32,9 @@ nonisolated struct EditorMetrics: Equatable, Sendable {
         // The font's own line height already includes some leading; add what is missing.
         let body = FontBook.shared.text(size: size)
         let natural = Double(body.ascender - body.descender + body.leading)
-        lineSpacing = max(0, size * height - natural).rounded()
+        let target = size * height
+        lineSpacing = max(0, target - natural).rounded()
+        maxLineHeight = target < natural ? target.rounded() : 0
         paragraphSpacing = (size * 0.9).rounded()
         topInset = 28
     }
