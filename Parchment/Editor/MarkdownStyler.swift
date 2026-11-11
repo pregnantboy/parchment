@@ -313,7 +313,7 @@ final class MarkdownStyler {
     /// strikes it through when it continues a ticked task.
     private func finishContinuation(at index: Int, in storage: NSTextStorage) {
         let line = lines[index]
-        if case .task(isChecked: true) = lines[paragraphHead(of: index)].kind, !line.contentRange.isEmpty {
+        if case .task(.done) = lines[paragraphHead(of: index)].kind, !line.contentRange.isEmpty {
             storage.addAttributes([
                 .strikethroughStyle: NSNumber(value: NSUnderlineStyle.single.rawValue),
                 .strikethroughColor: Palette.muted,
@@ -463,8 +463,16 @@ final class MarkdownStyler {
         let body = FontBook.shared.text(size: metrics.fontSize)
         let prefix = text.string(in: line.prefixRange)
         let headIndent = listTextIndent(of: line)
+        // A bullet hangs as far out as a one-digit number does, so `-` items line up with
+        // numbered ones instead of sitting right against their text.
+        var bulletRoom = 0.0
+        var bulletSpace: Int?
+        if case .listItem(isOrdered: false) = line.kind, let marker = ListPrefix.parse(text, line: line.range)?.markerRange {
+            bulletRoom = max(0, width(of: "0. ", font: body) - width(of: text.string(in: marker), font: body))
+            bulletSpace = marker.upperBound - 1
+        }
         let paragraph = paragraphStyle(ParagraphKey(
-            firstLineHeadIndent: max(0, headIndent - width(of: prefix, font: body)),
+            firstLineHeadIndent: max(0, headIndent - width(of: prefix, font: body) - bulletRoom),
             headIndent: headIndent,
             lineSpacing: metrics.lineSpacing,
             maxLineHeight: metrics.maxLineHeight,
@@ -472,6 +480,9 @@ final class MarkdownStyler {
             spacingAfter: spacingAfter(line: index) { _ in listSpacingAfter }
         ))
         storage.setAttributes(attributes(font: body, color: Palette.ink, paragraph: paragraph), range: NSRange(line.fullRange))
+        if bulletRoom > 0, let bulletSpace {
+            storage.addAttribute(.kern, value: NSNumber(value: bulletRoom), range: NSRange(location: bulletSpace, length: 1))
+        }
     }
 
     /// Where a list item's text starts: the gutter edge, moved right for nested items.
@@ -663,7 +674,11 @@ final class MarkdownStyler {
                 spacingAfter: isLast ? rendered.height + Self.imageVerticalPadding : 0
             ))
             storage.addAttributes([.font: tiny, .foregroundColor: NSColor.clear, .paragraphStyle: paragraph], range: fullRange)
-            storage.removeAttribute(.kern, range: fullRange)
+            // The grid shows the content; drop what the layout manager would still draw for
+            // the hidden source, such as code pills, which showed as smudges above the table.
+            for key in [NSAttributedString.Key.kern, .parchmentInlineCode, .parchmentLink, .underlineStyle, .strikethroughStyle] {
+                storage.removeAttribute(key, range: fullRange)
+            }
             let lineRange = NSRange(line.range)
             if isLast, lineRange.length > 0 {
                 storage.addAttributes([.parchmentImage: rendered.image, .parchmentTable: NSNumber(value: true)], range: lineRange)
@@ -882,8 +897,9 @@ final class MarkdownStyler {
                 let padding = NSNumber(value: Double(MarkdownLayoutManager.inlineCodePadding))
                 // In reading mode the opening backtick takes no room, so the kern goes on the
                 // character before it instead.
+                // Never in a list or quote prefix: its kern sets where the item's text starts.
                 let leftPadIndex = hidesInlineSyntax ? range.location - 2 : range.location - 1
-                if leftPadIndex >= line.range.location {
+                if leftPadIndex >= line.contentStart {
                     storage.addAttribute(.kern, value: padding, range: NSRange(location: leftPadIndex, length: 1))
                 }
                 storage.addAttribute(.kern, value: padding, range: NSRange(location: NSMaxRange(range) - 1, length: 1))
@@ -925,10 +941,10 @@ final class MarkdownStyler {
             case .quoteMarker:
                 storage.addAttribute(.foregroundColor, value: isReading ? NSColor.clear : Palette.marker, range: range)
 
-            case .taskBox(let isChecked):
+            case .taskBox(let state):
                 storage.addAttributes([
                     .foregroundColor: NSColor.clear,
-                    .parchmentTaskBox: NSNumber(value: isChecked),
+                    .parchmentTaskBox: NSNumber(value: state.rawValue),
                 ], range: range)
 
             case .tableHeader:

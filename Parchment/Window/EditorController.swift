@@ -16,6 +16,8 @@ final class EditorController {
     private(set) var isTyping = false
     /// The outline popover, used when the window is too narrow for the side panel.
     var isShowingOutline = false
+    /// The timeline of what Claude has done, opened from the status pill.
+    var isShowingAgentActivity = false
     /// Reading mode for this window: read-only, Markdown symbols hidden.
     var isReading = false
     /// Set by the window: whether it is wide enough for the outline side panel.

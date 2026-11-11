@@ -83,9 +83,16 @@ struct InlineParserTests {
 
     @Test func taskSpans() {
         let result = spans("- [x] done")
-        #expect(result.contains { $0.0 == .taskBox(isChecked: true) && $0.1 == "[x]" })
+        #expect(result.contains { $0.0 == .taskBox(.done) && $0.1 == "[x]" })
         #expect(result.contains { $0.0 == .completedTask && $0.1 == "done" })
         #expect(result.contains { $0.0 == .listMarker && $0.1 == "- " })
+    }
+
+    @Test func blockedAndInProgressTasksAreNotStruckThrough() {
+        let blocked = spans("- [!] stuck")
+        #expect(blocked.contains { $0.0 == .taskBox(.blocked) && $0.1 == "[!]" })
+        #expect(!blocked.contains { $0.0 == .completedTask })
+        #expect(spans("- [/] going").contains { $0.0 == .taskBox(.inProgress) && $0.1 == "[/]" })
     }
 
     @Test func tablePipesAreSyntax() {

@@ -37,6 +37,11 @@ public enum JSONValue: Sendable, Hashable, Decodable {
         return nil
     }
 
+    public var bool: Bool? {
+        if case .bool(let value) = self { return value }
+        return nil
+    }
+
     /// A string, or a whole number written as a string ("3" for 3).
     public var identifier: String? {
         switch self {

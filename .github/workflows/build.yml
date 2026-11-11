@@ -3,9 +3,13 @@ name: Build
 on:
   push:
     branches: ["**"]
-    # Pushing a tag like v1.2.0 builds that version and publishes a GitHub Release.
-    tags: ["v*"]
   pull_request:
+  # Publishing a release on GitHub (Releases > Draft a new release) builds that version
+  # and attaches Parchment.dmg to it. The workflow never creates a release itself: it used
+  # to, on every v* tag, and then GitHub refused the release being written by hand for
+  # the same tag ("a release with this tag already exists").
+  release:
+    types: [published]
 
 # A newer push to the same branch cancels the older run, to save macOS minutes.
 concurrency:
@@ -16,7 +20,7 @@ jobs:
   build:
     runs-on: macos-26
     permissions:
-      # Needed to create the GitHub Release on tag pushes.
+      # Needed to attach the app to a release.
       contents: write
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +41,7 @@ jobs:
 
       - name: Set version
         run: |
-          # A v1.2.0 tag makes the app report version 1.2.0; branch builds keep project.yml's.
+          # A release tagged v1.2.0 makes the app report version 1.2.0; branch builds keep project.yml's.
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "VERSION_ARGS=MARKETING_VERSION=${GITHUB_REF_NAME#v} CURRENT_PROJECT_VERSION=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
           fi
@@ -56,35 +60,37 @@ jobs:
         run: |
           # Apple Silicon refuses to launch completely unsigned apps, so sign ad hoc.
           codesign --force --deep --sign - build/Build/Products/Release/Parchment.app
-          ditto -c -k --keepParent build/Build/Products/Release/Parchment.app Parchment.zip
+          # A disk image with the app next to a shortcut to Applications, to drag across.
+          # ditto keeps the app's symlinks and signature.
+          mkdir dmg
+          ditto build/Build/Products/Release/Parchment.app dmg/Parchment.app
+          ln -s /Applications dmg/Applications
+          # hdiutil sometimes fails with "Resource busy" on CI machines; a retry gets through.
+          for attempt in 1 2 3 4 5; do
+            hdiutil create -volname Parchment -srcfolder dmg -fs HFS+ -format UDZO -ov Parchment.dmg && break
+            [ "$attempt" -lt 5 ] || exit 1
+            sleep 5
+          done
+          hdiutil verify Parchment.dmg
 
       - name: Upload app
-        # archive: false uploads Parchment.zip as-is. Without it, GitHub wraps the
-        # zip in a second zip, so people unzip once and find another zip.
-        # Keep the ditto zip above: it preserves the app's symlinks and signature.
+        # archive: false uploads Parchment.dmg as-is, instead of wrapping it in a zip.
         uses: actions/upload-artifact@v7
         with:
-          path: Parchment.zip
+          path: Parchment.dmg
           archive: false
           retention-days: 14
 
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Attach to release
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          # The asset keeps the plain name Parchment.zip, so this link always gets the newest:
-          # https://github.com/<owner>/<repo>/releases/latest/download/Parchment.zip
-          # A release made by hand on GitHub (which also creates the tag) gets the zip
-          # attached; otherwise the release is created here.
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" Parchment.zip --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" Parchment.zip \
-              --title "Parchment ${GITHUB_REF_NAME#v}" \
-              --generate-notes \
-              --verify-tag
-          fi
+          # The asset keeps the plain name Parchment.dmg, so this link always gets the newest:
+          # https://github.com/<owner>/<repo>/releases/latest/download/Parchment.dmg
+          # --clobber replaces the file when the run is started again for the same release.
+          gh release upload "$TAG" Parchment.dmg --clobber
 
       - name: Upload build log
         if: always()

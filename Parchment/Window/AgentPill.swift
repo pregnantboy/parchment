@@ -2,46 +2,87 @@ import ParchmentAgent
 import SwiftUI
 
 /// Replaces the word count pill while Claude follows the file: who is working, what they are
-/// doing, and how far the plan is. A light sweep runs across the text while Claude works.
-/// The last few actions float above it and fade out.
+/// doing and for how long, and how far the plan is. A second line carries Claude's own words:
+/// the sentence it is writing, or what its last message came down to. A light sweep runs across
+/// the text while Claude works. The last few actions float above it and fade out.
+/// Clicking the pill opens the timeline of everything Claude has done.
 struct AgentPill: View {
     let status: PlanStatus
+    @Binding var isShowingActivity: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// An activity shorter than this shows no timer: most tool calls are over in a moment.
+    private static let timerAfter: TimeInterval = 10
 
     var body: some View {
         VStack(spacing: 8) {
             ActivityTicker(actions: status.session.recentActions)
-            // Ticks so "Last update 6 min ago" appears and counts up without new events.
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                pill(at: context.date)
+            Button {
+                isShowingActivity.toggle()
+            } label: {
+                // Ticks so the timer counts up and "Last update 6 min ago" appears without new events.
+                TimelineView(.periodic(from: .now, by: status.isWorking ? 1 : 30)) { context in
+                    pill(at: context.date)
+                }
+            }
+            .buttonStyle(.plain)
+            .help("Show what Claude has done (\u{21E7}\u{2318}A)")
+            .popover(isPresented: $isShowingActivity, arrowEdge: .top) {
+                AgentTimeline(status: status)
             }
         }
     }
 
     private func pill(at date: Date) -> some View {
         let shimmers = status.isWorking && !status.isStale(at: date) && !reduceMotion
-        let text = label(at: date)
-        return text
-            .overlay {
+        let headline = status.headline(at: date)
+        let text = label(headline, at: date)
+        return VStack(spacing: 2) {
+            text.overlay {
                 if shimmers {
                     ShimmerBand().mask(text)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .glassEffect(.regular, in: .capsule)
-            .accessibilityElement(children: .combine)
-            .allowsHitTesting(false)
+            if let detail = headline.detail {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.parchmentMuted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .modifier(CappedWidth(limit: 520))
+        // The bar takes the text's width, so it never stretches the pill.
+        .padding(.bottom, hasBar ? 7 : 0)
+        .overlay(alignment: .bottom) {
+            if hasBar {
+                SegmentedProgressBar(progress: status.progress)
+                    .frame(height: 3)
+            }
+        }
+        .padding(.horizontal, headline.detail == nil && !hasBar ? 14 : 18)
+        .padding(.vertical, 7)
+        .glassEffect(.regular, in: .capsule)
+        .contentShape(.capsule)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows what Claude has done")
     }
 
-    private func label(at date: Date) -> some View {
+    private var hasBar: Bool { !status.progress.segments.isEmpty }
+
+    private func label(_ headline: SessionHeadline, at date: Date) -> some View {
         HStack(spacing: 8) {
             Text(status.who)
                 .fontWeight(.semibold)
-            Text(status.headline(at: date))
+            Text(headline.title)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if let since = headline.since, date.timeIntervalSince(since) >= Self.timerAfter {
+                Text(ElapsedText.short(date.timeIntervalSince(since)))
+                    .monospacedDigit()
+                    .opacity(0.7)
+            }
             if let progress = status.progressText {
                 Text(progress)
                     .monospacedDigit()
@@ -50,7 +91,6 @@ struct AgentPill: View {
         }
         .font(.system(size: 12))
         .foregroundStyle(Color.parchmentInk)
-        .modifier(CappedWidth(limit: 520))
     }
 }
 

@@ -9,7 +9,7 @@ public enum LineKind: Hashable, Sendable {
     case code(language: String)
     case quote
     case listItem(isOrdered: Bool)
-    case task(isChecked: Bool)
+    case task(TaskState)
     case rule
     case tableHeader
     case tableDelimiter

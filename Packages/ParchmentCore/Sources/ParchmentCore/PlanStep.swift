@@ -1,7 +1,7 @@
 /// One step of a plan, found from the document's structure.
 public struct PlanStep: Hashable, Sendable, Identifiable {
     public enum Kind: Hashable, Sendable {
-        case task(isChecked: Bool)
+        case task(TaskState)
         case numbered
         case heading(level: Int)
     }
@@ -15,12 +15,16 @@ public struct PlanStep: Hashable, Sendable, Identifiable {
     /// From the step's line to the start of the next step (or the end of the document).
     /// Edits inside it count as work on this step.
     public var section: MarkdownRange
+    /// Columns of leading whitespace (a tab counts as four). A task indented further than the
+    /// task before it is one of that task's sub-steps.
+    public var indent: Int
 
-    public init(kind: Kind, title: String, range: MarkdownRange, section: MarkdownRange) {
+    public init(kind: Kind, title: String, range: MarkdownRange, section: MarkdownRange, indent: Int = 0) {
         self.kind = kind
         self.title = title
         self.range = range
         self.section = section
+        self.indent = indent
     }
 
     public var isTask: Bool {
@@ -28,15 +32,17 @@ public struct PlanStep: Hashable, Sendable, Identifiable {
         return false
     }
 
-    public var isChecked: Bool {
-        if case .task(let checked) = kind { return checked }
-        return false
+    public var taskState: TaskState? {
+        if case .task(let state) = kind { return state }
+        return nil
     }
+
+    public var isChecked: Bool { taskState == .done }
 }
 
 public enum PlanSteps {
     /// The steps of any plan, whatever its format:
-    /// 1. every task (`- [ ]` / `- [x]`) if there is at least one;
+    /// 1. every task (`- [ ]`, `- [/]`, `- [!]`, `- [x]`) if there is at least one;
     /// 2. else top-level numbered list items, if there are at least two;
     /// 3. else headings named like steps ("Phase 2", "Step 3", "Milestone", "1. Setup");
     /// 4. else level 2 headings, or level 3 headings when there are no level 2 ones.
@@ -83,7 +89,7 @@ public enum PlanSteps {
         lines.enumerated().map { index, line in
             let end = index + 1 < lines.count ? lines[index + 1].range.location : text.length
             let kind: PlanStep.Kind = switch line.kind {
-            case .task(let isChecked): .task(isChecked: isChecked)
+            case .task(let state): .task(state)
             case .heading(let level): .heading(level: level)
             default: .numbered
             }
@@ -91,7 +97,8 @@ public enum PlanSteps {
                 kind: kind,
                 title: OutlineHeading.cleanTitle(text.string(in: line.contentRange)),
                 range: line.range,
-                section: MarkdownRange(location: line.range.location, length: max(0, end - line.range.location))
+                section: MarkdownRange(location: line.range.location, length: max(0, end - line.range.location)),
+                indent: indentation(of: line, in: text)
             )
         }
     }
@@ -100,7 +107,7 @@ public enum PlanSteps {
         var count = 0
         var index = line.range.location
         while index < line.range.upperBound, text[index] == Unit.space || text[index] == Unit.tab {
-            count += 1
+            count += text[index] == Unit.tab ? 4 : 1
             index += 1
         }
         return count

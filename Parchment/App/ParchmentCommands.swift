@@ -83,6 +83,9 @@ struct ParchmentCommands: Commands {
             Divider()
 
             Toggle("Follow Claude", isOn: $followsClaude)
+            Button("Show Claude\u{2019}s Activity") { editor?.isShowingAgentActivity.toggle() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(editor?.isFollowedByClaude != true)
             Button("Stop Following Claude") { editor?.stopFollowingClaude() }
                 .disabled(editor?.isFollowedByClaude != true)
 

@@ -21,8 +21,10 @@ struct PlanStatus {
 
     var isWorking: Bool { session.status == .working }
 
+    /// A working session that went quiet although nothing is running. During a long command
+    /// or while helpers work, silence is expected and the pill shows the elapsed time instead.
     func isStale(at date: Date) -> Bool {
-        isWorking && date.timeIntervalSince(session.lastEventDate) > Self.staleAfter
+        session.isStale(at: date, after: Self.staleAfter)
     }
 
     /// "Claude", "Claude + 1 helper", "Claude + 3 helpers".
@@ -34,23 +36,14 @@ struct PlanStatus {
         }
     }
 
-    func headline(at date: Date) -> String {
-        if isStale(at: date) {
-            let minutes = Int(date.timeIntervalSince(session.lastEventDate) / 60)
-            return "Last update \(minutes) min ago"
-        }
-        switch session.status {
-        case .working:
-            return session.activity ?? session.helpers.lazy.compactMap(\.activity).first ?? "Working"
-        case .waiting(.permission):
-            return "Needs your permission"
-        case .waiting(.idle):
-            return "Waiting for you"
-        case .waiting(.finishedTurn):
-            return progress.isComplete ? "Done" : "Waiting for you"
-        case .ended:
-            return progress.isComplete ? "Done" : "Session ended"
-        }
+    /// The pill's wording: what Claude does or waits for, and what it says in its own words.
+    func headline(at date: Date) -> SessionHeadline {
+        SessionHeadline.make(session: session, planComplete: progress.isComplete, now: date, staleAfter: Self.staleAfter)
+    }
+
+    /// The folder Claude Code runs in, like "parchment".
+    var projectName: String? {
+        session.cwd.map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// "6 of 9", "Step 3 of 7", or nothing.

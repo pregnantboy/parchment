@@ -94,12 +94,12 @@ public enum MarkdownParser {
             }
             InlineParser.parse(text, range: line.contentRange, into: &spans)
 
-        case .task(let isChecked):
+        case .task(let state):
             if let prefix = ListPrefix.parse(text, line: line.range), let box = prefix.taskBox {
                 spans.append(MarkdownSpan(.listMarker, prefix.markerRange))
-                spans.append(MarkdownSpan(.taskBox(isChecked: isChecked), box))
+                spans.append(MarkdownSpan(.taskBox(state), box))
             }
-            if isChecked, !line.contentRange.isEmpty {
+            if state.isDone, !line.contentRange.isEmpty {
                 spans.append(MarkdownSpan(.completedTask, line.contentRange))
             }
             InlineParser.parse(text, range: line.contentRange, into: &spans)
@@ -144,10 +144,10 @@ public enum MarkdownParser {
             case .quote:
                 return (.quote, prefix.contentStart)
             case .bullet:
-                if prefix.isTask { return (.task(isChecked: prefix.isChecked), prefix.contentStart) }
+                if prefix.isTask { return (.task(prefix.taskState), prefix.contentStart) }
                 return (.listItem(isOrdered: false), prefix.contentStart)
             case .ordered:
-                if prefix.isTask { return (.task(isChecked: prefix.isChecked), prefix.contentStart) }
+                if prefix.isTask { return (.task(prefix.taskState), prefix.contentStart) }
                 return (.listItem(isOrdered: true), prefix.contentStart)
             }
         }

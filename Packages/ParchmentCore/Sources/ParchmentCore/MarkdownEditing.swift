@@ -126,6 +126,7 @@ public enum MarkdownEditing {
     // MARK: - Tasks
 
     /// Turns the selected lines into tasks, or checks and unchecks them if they already are.
+    /// In-progress and blocked tasks count as unchecked, so toggling them ticks them.
     public static func toggleTask(in text: MarkdownText, selection: MarkdownRange) -> TextEdit? {
         let lines = text.lineRanges(touching: selection)
         let prefixes = lines.map { ListPrefix.parse(text, line: $0) }
@@ -154,7 +155,7 @@ public enum MarkdownEditing {
     public static func toggleTaskBox(at boxLocation: Int, in text: MarkdownText, selection: MarkdownRange) -> TextEdit? {
         guard text.unit(at: boxLocation) == Unit.openBracket, text.unit(at: boxLocation + 2) == Unit.closeBracket,
               let mark = text.unit(at: boxLocation + 1) else { return nil }
-        let newMark = mark == Unit.space ? "x" : " "
+        let newMark = TaskState(mark: mark)?.isDone == true ? " " : "x"
         return TextEdit(range: MarkdownRange(location: boxLocation + 1, length: 1), replacement: newMark, selection: selection)
     }
 

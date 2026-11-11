@@ -1,4 +1,5 @@
 import AppKit
+import ParchmentCore
 
 /// Draws the decorations that make the Ink look: code block backgrounds, inline code pills,
 /// quote bars, rule lines, task circles, bullets, inline images, and wet ink.
@@ -223,11 +224,11 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             }
             storage.enumerateAttribute(.parchmentInlineCode, in: charRange, options: []) { value, codeRange, _ in
                 guard value != nil else { return }
-                self.drawInlineCodePill(codeRange, fragmentRect: rect, container: container, origin: origin, in: context)
+                self.drawInlineCodePill(codeRange, fragmentRect: rect, fragmentGlyphs: glyphRange, container: container, origin: origin, in: context)
             }
             storage.enumerateAttribute(.parchmentTaskBox, in: charRange, options: []) { value, boxRange, _ in
-                guard let isChecked = (value as? NSNumber)?.boolValue else { return }
-                self.drawTaskCircle(boxRange: boxRange, isChecked: isChecked, fragmentRect: rect, container: container, origin: origin, in: context)
+                guard let raw = (value as? NSNumber)?.intValue, let state = TaskState(rawValue: raw) else { return }
+                self.drawTaskCircle(boxRange: boxRange, state: state, fragmentRect: rect, container: container, origin: origin, in: context)
             }
             storage.enumerateAttribute(.parchmentBullet, in: charRange, options: []) { value, bulletRange, _ in
                 guard value != nil else { return }
@@ -274,7 +275,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
     /// Draws a rounded pill behind the part of an inline code span that sits on this line
     /// fragment. `enumerateAttribute` already clamps `codeRange` to the fragment, so wrapped
     /// code gets one snug pill per line instead of a slab reaching into the margin.
-    private func drawInlineCodePill(_ codeRange: NSRange, fragmentRect: CGRect, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
+    private func drawInlineCodePill(_ codeRange: NSRange, fragmentRect: CGRect, fragmentGlyphs: NSRange, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
         guard let storage = textStorage else { return }
         let characters = storage.mutableString
 
@@ -286,9 +287,12 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         guard upper > lower else { return }
         let visible = NSRange(location: lower, length: upper - lower)
 
-        let glyphs = glyphRange(forCharacterRange: visible, actualCharacterRange: nil)
-        guard glyphs.length > 0 else { return }
-        let bounds = boundingRect(forGlyphRange: glyphs, in: container)
+        // Only this line's glyphs, measured as the text's own extent on this line.
+        // `boundingRect(forGlyphRange:)` unions every line the range touches, so a glyph left
+        // on the line above (such as a joined line break) used to stretch the pill across
+        // the whole line.
+        let glyphs = NSIntersectionRange(glyphRange(forCharacterRange: visible, actualCharacterRange: nil), fragmentGlyphs)
+        guard glyphs.length > 0, let bounds = lineExtent(of: glyphs, fragmentRect: fragmentRect, in: container) else { return }
         let font = (storage.attribute(.font, at: lower, effectiveRange: nil) as? NSFont) ?? FontBook.shared.mono(size: 15)
         let baseline = fragmentRect.minY + location(forGlyphAt: glyphs.location).y
 
@@ -306,6 +310,21 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         context.addPath(Self.roundedPath(pill, radius: Self.inlineCodeRadius))
         context.fillPath()
         context.restoreGState()
+    }
+
+    /// The horizontal extent of `glyphs` on the line fragment `fragmentRect`, from the
+    /// selection-style rects of the range, keeping only the one on this line.
+    private func lineExtent(of glyphs: NSRange, fragmentRect: CGRect, in container: NSTextContainer) -> CGRect? {
+        var result: CGRect?
+        enumerateEnclosingRects(
+            forGlyphRange: glyphs,
+            withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+            in: container
+        ) { rect, _ in
+            guard rect.midY >= fragmentRect.minY, rect.midY <= fragmentRect.maxY, rect.width > 0 else { return }
+            result = result.map { $0.union(rect) } ?? rect
+        }
+        return result
     }
 
     private static func isSpace(_ character: unichar) -> Bool {
@@ -425,10 +444,11 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
 
     // MARK: - Tasks
 
-    /// Replaces the transparent `[ ]` or `[x]` with a circle on the text's cap-height midline.
-    /// It is centered on where an empty `[ ]` would sit, measured back from the box's right
-    /// edge, so checked and unchecked circles line up even though `x` is wider than a space.
-    private func drawTaskCircle(boxRange: NSRange, isChecked: Bool, fragmentRect: CGRect, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
+    /// Replaces the transparent `[ ]`, `[/]`, `[!]` or `[x]` with a circle on the text's
+    /// cap-height midline. It is centered on where an empty `[ ]` would sit, measured back from
+    /// the box's right edge, so the circles line up even though the marks differ in width.
+    /// In progress is a half-filled vermilion circle; blocked is a vermilion circle with a bar.
+    private func drawTaskCircle(boxRange: NSRange, state: TaskState, fragmentRect: CGRect, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
         guard let storage = textStorage, NSMaxRange(boxRange) <= storage.length else { return }
         let glyphs = glyphRange(forCharacterRange: boxRange, actualCharacterRange: nil)
         guard glyphs.length > 0 else { return }
@@ -442,11 +462,16 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         let circle = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
         let scale = font.pointSize / 18
         let lineStart = storage.mutableString.lineRange(for: NSRange(location: boxRange.location, length: 0)).location
-        let isActive = !isChecked && activeTaskLines.contains(lineStart)
+        let isChecked = state == .done
+        let isActive = (state == .open || state == .inProgress) && activeTaskLines.contains(lineStart)
 
         context.saveGState()
         let fill = isChecked ? (taskFills[boxRange.location] ?? 1) : 0
-        if ornaments {
+        if state == .blocked {
+            drawBlockedMark(in: circle, scale: scale, sealShaped: ornaments, context: context)
+        } else if state == .inProgress {
+            drawInProgressMark(in: circle, scale: scale, sealShaped: ornaments, context: context)
+        } else if ornaments {
             drawWaxSeal(in: circle, isChecked: isChecked, fill: fill, isActive: isActive, scale: scale, context: context)
         } else if isChecked {
             // Claude just ticked it: the fill grows from the center, then the check appears.
@@ -485,6 +510,43 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             context.strokeEllipse(in: circle.insetBy(dx: -spread, dy: -spread))
         }
         context.restoreGState()
+    }
+
+    /// A vermilion disc (or seal) with a pale bar across it, like a no-entry sign.
+    private func drawBlockedMark(in circle: CGRect, scale: CGFloat, sealShaped: Bool, context: CGContext) {
+        let center = CGPoint(x: circle.midX, y: circle.midY)
+        Palette.accent.setFill()
+        if sealShaped {
+            context.addPath(OrnamentPath.waxSeal(center: center, radius: circle.width / 2))
+            context.fillPath()
+        } else {
+            context.fillEllipse(in: circle)
+        }
+        let barHeight = max(1.5, 2.2 * scale)
+        let barWidth = circle.width * 0.52
+        let bar = CGRect(x: center.x - barWidth / 2, y: center.y - barHeight / 2, width: barWidth, height: barHeight)
+        Palette.paper.setFill()
+        context.addPath(CGPath(roundedRect: bar, cornerWidth: barHeight / 2, cornerHeight: barHeight / 2, transform: nil))
+        context.fillPath()
+    }
+
+    /// A vermilion outline (or seal outline) with its left half filled.
+    private func drawInProgressMark(in circle: CGRect, scale: CGFloat, sealShaped: Bool, context: CGContext) {
+        let center = CGPoint(x: circle.midX, y: circle.midY)
+        let lineWidth = max(1.5, 2 * scale)
+        let outline: CGPath = sealShaped
+            ? OrnamentPath.waxSeal(center: center, radius: circle.width / 2 - lineWidth / 2)
+            : CGPath(ellipseIn: circle.insetBy(dx: lineWidth / 2, dy: lineWidth / 2), transform: nil)
+        context.saveGState()
+        context.addPath(outline)
+        context.clip()
+        Palette.accent.setFill()
+        context.fill(CGRect(x: circle.minX, y: circle.minY, width: circle.width / 2, height: circle.height))
+        context.restoreGState()
+        Palette.accent.setStroke()
+        context.setLineWidth(lineWidth)
+        context.addPath(outline)
+        context.strokePath()
     }
 
     /// Checked: a poured wax seal with a pressed ring and a pale gold check. Unchecked: the

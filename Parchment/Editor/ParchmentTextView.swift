@@ -257,14 +257,21 @@ final class ParchmentTextView: NSTextView {
         let location = min(max(0, range.location), storage.length)
         setSelectedRange(NSRange(location: location, length: 0))
         window?.makeFirstResponder(self)
+        // Lay out everything above first: with non-contiguous layout the line's y is otherwise
+        // an estimate, and rendered tables and images make that estimate land too high.
+        layoutManager?.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(location + 1, storage.length)))
         guard let lineRect = lineRect(forCharacterAt: location) else {
             scrollRangeToVisible(NSRange(location: location, length: 0))
             return
         }
-        if isTypewriterMode {
+        let insetTop = enclosingScrollView?.contentInsets.top ?? 0
+        if isReading {
+            // Reading mode names the section at the top of the window as the current one
+            // (`topVisibleCharacterIndex`), so the heading goes to the top, not a third down.
+            scrollClip(toY: lineRect.minY - insetTop - Self.revealTopMargin)
+        } else if isTypewriterMode {
             centerCaretIfNeeded()
         } else {
-            let insetTop = enclosingScrollView?.contentInsets.top ?? 0
             scrollClip(toY: lineRect.minY - insetTop - CGFloat(visibleHeight / 3))
         }
     }
@@ -731,6 +738,10 @@ final class ParchmentTextView: NSTextView {
             return drop
         }
     }
+
+    /// Room above a heading revealed in reading mode. Less than the 12pt probe in
+    /// `topVisibleCharacterIndex`, so the probe lands on the heading itself.
+    static let revealTopMargin: CGFloat = 8
 
     /// The character at the top of the visible text, below any toolbar.
     func topVisibleCharacterIndex() -> Int? {

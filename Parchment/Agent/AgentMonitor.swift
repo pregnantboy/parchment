@@ -13,6 +13,9 @@ final class AgentMonitor {
     private(set) var followers: [URL: String] = [:]
     /// Whether Parchment's hook is in Claude Code's settings.
     private(set) var isConnected = false
+    /// Connected by an older Parchment, whose hook misses events this version listens to
+    /// (what Claude says, permission requests). Connecting again adds them.
+    private(set) var needsUpdate = false
 
     /// The plan window Parchment opened by itself for each session, so a newer plan can replace it.
     @ObservationIgnored private var autoOpened: [String: URL] = [:]
@@ -27,6 +30,7 @@ final class AgentMonitor {
     private var scriptURL: URL { HookInstaller.scriptURL(home: home) }
     /// Resolved, so a settings file that is a symlink into a dotfiles folder stays a symlink.
     private var settingsURL: URL { HookInstaller.settingsURL(home: home).resolvingSymlinksInPath() }
+    private var memoryURL: URL { InstructionsInstaller.memoryURL(home: home).resolvingSymlinksInPath() }
 
     private init() {}
 
@@ -142,7 +146,9 @@ final class AgentMonitor {
     // MARK: Connecting to Claude Code
 
     func refreshConnection() {
-        isConnected = HookInstaller.isInstalled(in: try? Data(contentsOf: settingsURL))
+        let settings = try? Data(contentsOf: settingsURL)
+        isConnected = HookInstaller.isInstalled(in: settings)
+        needsUpdate = isConnected && !HookInstaller.isCurrent(in: settings)
     }
 
     /// The JSON Parchment adds to Claude Code's settings, for showing before connecting.
@@ -155,7 +161,12 @@ final class AgentMonitor {
         (HookInstaller.settingsURL(home: home).path as NSString).abbreviatingWithTildeInPath
     }
 
-    /// Writes the hook script and adds it to `~/.claude/settings.json`, after saving a backup.
+    var memoryPath: String {
+        (InstructionsInstaller.memoryURL(home: home).path as NSString).abbreviatingWithTildeInPath
+    }
+
+    /// Writes the hook script and adds it to `~/.claude/settings.json`, and adds the task-state
+    /// instructions to `~/.claude/CLAUDE.md`, after saving a backup of each.
     func connect() throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: inboxURL, withIntermediateDirectories: true)
@@ -169,17 +180,32 @@ final class AgentMonitor {
             try existing.write(to: backupURL, options: .atomic)
         }
         try updated.write(to: settingsURL, options: .atomic)
+
+        let memory = try? String(contentsOf: memoryURL, encoding: .utf8)
+        if let memory {
+            try Data(memory.utf8).write(to: memoryBackupURL, options: .atomic)
+        }
+        try Data(InstructionsInstaller.installing(into: memory).utf8).write(to: memoryURL, options: .atomic)
         refreshConnection()
     }
 
-    /// Removes Parchment's hook from the settings (after saving a backup) and deletes the script.
+    /// Removes Parchment's hook from the settings and its block from `CLAUDE.md` (after saving a
+    /// backup of each) and deletes the script.
     func disconnect() throws {
         if let existing = try? Data(contentsOf: settingsURL) {
             try existing.write(to: backupURL, options: .atomic)
             try HookInstaller.removing(from: existing).write(to: settingsURL, options: .atomic)
         }
+        if let memory = try? String(contentsOf: memoryURL, encoding: .utf8), InstructionsInstaller.isInstalled(in: memory) {
+            try Data(memory.utf8).write(to: memoryBackupURL, options: .atomic)
+            try Data(InstructionsInstaller.removing(from: memory).utf8).write(to: memoryURL, options: .atomic)
+        }
         try? FileManager.default.removeItem(at: scriptURL)
         refreshConnection()
+    }
+
+    private var memoryBackupURL: URL {
+        memoryURL.deletingLastPathComponent().appendingPathComponent("CLAUDE.md.parchment-backup")
     }
 
     private var backupURL: URL {

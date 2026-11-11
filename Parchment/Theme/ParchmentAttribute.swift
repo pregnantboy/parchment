@@ -4,7 +4,7 @@ import AppKit
 nonisolated extension NSAttributedString.Key {
     /// Value: `NSNumber(BlockDecoration.rawValue)`, on a line's full range.
     static let parchmentBlock = NSAttributedString.Key("app.parchment.block")
-    /// Value: `NSNumber(Bool isChecked)`, on the 3-character `[ ]` or `[x]`.
+    /// Value: `NSNumber(TaskState.rawValue)`, on the 3-character `[ ]`, `[/]`, `[!]` or `[x]`.
     static let parchmentTaskBox = NSAttributedString.Key("app.parchment.taskBox")
     /// Value: `NSImage`, on the image line's range.
     static let parchmentImage = NSAttributedString.Key("app.parchment.image")
