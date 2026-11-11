@@ -30,7 +30,7 @@ struct AgentPill: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(Color.parchmentInk, in: .capsule)
+            .glassEffect(.regular, in: .capsule)
             .accessibilityElement(children: .combine)
             .allowsHitTesting(false)
     }
@@ -49,8 +49,34 @@ struct AgentPill: View {
             }
         }
         .font(.system(size: 12))
-        .foregroundStyle(Color.parchmentPaper)
-        .frame(maxWidth: 520)
+        .foregroundStyle(Color.parchmentInk)
+        .modifier(CappedWidth(limit: 520))
+    }
+}
+
+/// Lets a view hug its content but never grow past `limit`. A plain `.frame(maxWidth:)`
+/// would stretch the pill to the full limit even for short text.
+private struct CappedWidth: ViewModifier {
+    let limit: CGFloat
+
+    func body(content: Content) -> some View {
+        CappedWidthLayout(limit: limit) { content }
+    }
+}
+
+private struct CappedWidthLayout: Layout {
+    let limit: CGFloat
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: min(proposal.width ?? limit, limit), height: proposal.height)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: capped(proposal))
     }
 }
 
@@ -109,7 +135,7 @@ private struct ActivityTicker: View {
         .foregroundStyle(action.succeeded ? Color.parchmentMuted : Color.parchmentAccent)
         .padding(.horizontal, 9)
         .padding(.vertical, 3)
-        .background(Color.parchmentPaper.opacity(0.92), in: .capsule)
+        .glassEffect(.regular, in: .capsule)
         .opacity(min(1, max(0, (Self.lifetime - age) / Self.fade)))
         .transition(.opacity)
     }

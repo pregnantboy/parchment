@@ -270,12 +270,14 @@ final class MarkdownStyler {
         let font: NSFont
         let indent: Double
         let lineSpacing: Double
+        var maxLineHeight = 0.0
         let spacing: Double
         switch head.kind {
         case .listItem, .task:
             font = FontBook.shared.text(size: metrics.fontSize)
             indent = listTextIndent(of: head)
             lineSpacing = metrics.lineSpacing
+            maxLineHeight = metrics.maxLineHeight
             spacing = spacingAfter(line: index) { _ in listSpacingAfter }
         case .quote:
             let size = quoteFontSize
@@ -287,6 +289,7 @@ final class MarkdownStyler {
             font = FontBook.shared.text(size: metrics.fontSize)
             indent = gutter
             lineSpacing = metrics.lineSpacing
+            maxLineHeight = metrics.maxLineHeight
             spacing = spacingAfter(line: index) { _ in metrics.paragraphSpacing }
         }
 
@@ -295,6 +298,7 @@ final class MarkdownStyler {
             firstLineHeadIndent: isReading ? indent : max(0, indent - leading),
             headIndent: indent,
             lineSpacing: lineSpacing,
+            maxLineHeight: maxLineHeight,
             spacingBefore: 0,
             spacingAfter: spacing
         ))
@@ -463,6 +467,7 @@ final class MarkdownStyler {
             firstLineHeadIndent: max(0, headIndent - width(of: prefix, font: body)),
             headIndent: headIndent,
             lineSpacing: metrics.lineSpacing,
+            maxLineHeight: metrics.maxLineHeight,
             spacingBefore: 0,
             spacingAfter: spacingAfter(line: index) { _ in listSpacingAfter }
         ))
@@ -605,6 +610,7 @@ final class MarkdownStyler {
                     firstLineHeadIndent: Double(current.firstLineHeadIndent),
                     headIndent: gutter + hang,
                     lineSpacing: Double(current.lineSpacing),
+                    maxLineHeight: Double(current.maximumLineHeight),
                     spacingBefore: Double(current.paragraphSpacingBefore),
                     spacingAfter: Double(current.paragraphSpacing)
                 ))
@@ -1047,6 +1053,7 @@ final class MarkdownStyler {
             firstLineHeadIndent: gutter,
             headIndent: gutter,
             lineSpacing: metrics.lineSpacing,
+            maxLineHeight: metrics.maxLineHeight,
             spacingBefore: 0,
             spacingAfter: spacingAfter
         ))
@@ -1058,6 +1065,9 @@ final class MarkdownStyler {
         style.firstLineHeadIndent = CGFloat(key.firstLineHeadIndent)
         style.headIndent = CGFloat(key.headIndent)
         style.lineSpacing = CGFloat(key.lineSpacing)
+        if key.maxLineHeight > 0 {
+            style.maximumLineHeight = CGFloat(key.maxLineHeight)
+        }
         style.paragraphSpacingBefore = CGFloat(key.spacingBefore)
         style.paragraphSpacing = CGFloat(key.spacingAfter)
         style.lineHeightMultiple = 1
@@ -1131,6 +1141,7 @@ nonisolated private struct ParagraphKey: Hashable {
     var firstLineHeadIndent: Double
     var headIndent: Double
     var lineSpacing: Double
+    var maxLineHeight: Double = 0
     var spacingBefore: Double
     var spacingAfter: Double
     var tabInterval: Double = 0
