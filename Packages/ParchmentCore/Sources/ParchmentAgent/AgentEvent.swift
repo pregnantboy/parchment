@@ -13,6 +13,12 @@ public struct AgentEvent: Sendable, Equatable {
         case stop
         case subagentStart
         case subagentStop
+        /// Claude asks for permission to use a tool, the moment the prompt appears.
+        case permissionRequested
+        /// A piece of Claude's own text, as it is shown in the terminal.
+        case message(delta: String, isFinal: Bool)
+        /// The turn ended because of an API error, like a rate limit.
+        case stopFailed(error: String)
     }
 
     public var kind: Kind
@@ -24,6 +30,18 @@ public struct AgentEvent: Sendable, Equatable {
     public var toolName: String?
     public var toolInput: JSONValue?
     public var toolResponse: JSONValue?
+    /// Links a tool's start to its end.
+    public var toolUseID: String?
+    /// Why a tool call failed.
+    public var errorText: String?
+    /// What the user typed, on `promptSubmitted`.
+    public var prompt: String?
+    /// Claude's (or a helper's) closing message, on `stop` and `subagentStop`.
+    public var lastMessage: String?
+    /// The message a `message` piece belongs to.
+    public var messageID: String?
+    /// What still runs in the background when Claude stops, one description each.
+    public var backgroundTasks: [String]
     public var date: Date
 
     public init(
@@ -35,6 +53,12 @@ public struct AgentEvent: Sendable, Equatable {
         toolName: String? = nil,
         toolInput: JSONValue? = nil,
         toolResponse: JSONValue? = nil,
+        toolUseID: String? = nil,
+        errorText: String? = nil,
+        prompt: String? = nil,
+        lastMessage: String? = nil,
+        messageID: String? = nil,
+        backgroundTasks: [String] = [],
         date: Date
     ) {
         self.kind = kind
@@ -45,6 +69,12 @@ public struct AgentEvent: Sendable, Equatable {
         self.toolName = toolName
         self.toolInput = toolInput
         self.toolResponse = toolResponse
+        self.toolUseID = toolUseID
+        self.errorText = errorText
+        self.prompt = prompt
+        self.lastMessage = lastMessage
+        self.messageID = messageID
+        self.backgroundTasks = backgroundTasks
         self.date = date
     }
 
@@ -67,7 +97,18 @@ public struct AgentEvent: Sendable, Equatable {
         case "Stop": kind = .stop
         case "SubagentStart": kind = .subagentStart
         case "SubagentStop": kind = .subagentStop
+        case "PermissionRequest": kind = .permissionRequested
+        case "MessageDisplay":
+            guard let delta = json["delta"]?.string else { return nil }
+            kind = .message(delta: delta, isFinal: json["final"]?.bool ?? false)
+        case "StopFailure": kind = .stopFailed(error: json["error"]?.string ?? "unknown")
         default: return nil
+        }
+
+        // Running tasks only: a finished one no longer keeps the session busy.
+        let background: [String] = (json["background_tasks"]?.array ?? []).compactMap { task in
+            if let status = task["status"]?.string, ["completed", "failed", "killed", "stopped"].contains(status) { return nil }
+            return task["description"]?.string ?? task["command"]?.string ?? task["type"]?.string
         }
 
         return AgentEvent(
@@ -79,6 +120,12 @@ public struct AgentEvent: Sendable, Equatable {
             toolName: json["tool_name"]?.string,
             toolInput: json["tool_input"],
             toolResponse: json["tool_response"],
+            toolUseID: json["tool_use_id"]?.string,
+            errorText: json["error"]?.string,
+            prompt: json["prompt"]?.string,
+            lastMessage: json["last_assistant_message"]?.string,
+            messageID: json["message_id"]?.string,
+            backgroundTasks: background,
             date: date
         )
     }

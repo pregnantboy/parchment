@@ -55,13 +55,14 @@ The tag sets the version the app reports (here 1.0.0). The newest release is alw
 
 Parchment can show the plan Claude Code is working on, live, when Claude Code runs in a terminal on the same Mac.
 
-1. Open **Parchment > Settings** (⌘,) and click **Connect…** under Claude Code. Parchment shows the hook it adds to `~/.claude/settings.json` and saves a backup next to it. Restart any Claude Code sessions that are already running.
+1. Open **Parchment > Settings** (⌘,) and click **Connect…** under Claude Code. Parchment shows the hook it adds to `~/.claude/settings.json` and saves a backup next to it. Restart any Claude Code sessions that are already running. If you connected with an older Parchment, Settings shows **Update…** instead: it replaces the hook with one that also reports what Claude says and asks.
    It also adds a short note to `~/.claude/CLAUDE.md` asking Claude to keep each task's box up to date (see below).
 2. Work with Claude Code as usual. When it writes a plan (in plan mode, or any Markdown file in a `plans` folder or with "plan" in its name), Parchment opens it in the background, one window per session.
 
 While Claude works on the file, the window is read-only and shows:
 
-- **The status pill:** who is working (and how many helpers), what they are doing, and progress such as "6 of 9" (from checkboxes or Claude's todo list) or "Step 3 of 7" (a guess from where Claude is editing). It shimmers while Claude works and goes still on "Waiting for you", "Needs your permission", "Done", or "Last update 6 min ago".
+- **The status pill:** who is working (and how many helpers), what they are doing, and progress such as "6 of 9" (from checkboxes or Claude's todo list) or "Step 3 of 7" (a guess from where Claude is editing). Anything that runs longer than ten seconds gets a timer, like "Running the tests 42s". A second line carries Claude's own words: the sentence it is writing while it works, and what its last message came down to once it stops (its closing question, if it asked one). When Claude waits, the pill says what for: "Needs your permission to run swift test", "Asks you: Which color?", "Waiting for you to approve the plan", "Waiting on 1 background task" or "Stopped: Rate limit reached". It shimmers while Claude works and goes still when it waits, on "Done", or on "Last update 6 min ago" (shown only when nothing is running).
+- **The activity timeline:** click the pill (or press ⇧⌘A) for the whole story of the session: what you asked, what Claude said, every action with how long it took and whether it worked (with the error if it failed), and what each helper was sent to do and reported back. The top shows a summary of the turn, such as "Working for 3m 05s · 4 files edited · 6 commands · 1 failed", and the helpers at work right now.
 - **Recent actions** above the pill, such as "Edited StatusPill.swift ✓", fading after a few seconds.
 - **The progress line** at the top shows plan progress, with a glint while Claude works.
 - **In the text:** new text inks in, changed lines get a vermilion mark in the margin, Claude's caret shows where it last wrote, the current task's circle pulses, ticked boxes fill in, and steps a helper works on are tagged with its name.

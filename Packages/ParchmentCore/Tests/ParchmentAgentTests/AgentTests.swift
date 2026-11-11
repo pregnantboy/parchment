@@ -309,3 +309,189 @@ struct PlumbingTests {
         #expect(InstructionsInstaller.removing(from: mine) == mine)
     }
 }
+
+@Suite("What Claude says and the timeline")
+struct InsightTests {
+    private func hook(_ name: String, _ fields: String = "", at seconds: Double = 0) -> AgentEvent {
+        let extra = fields.isEmpty ? "" : ", \(fields)"
+        return event(#"{"session_id": "s1", "hook_event_name": "\#(name)"\#(extra)}"#, at: seconds)
+    }
+
+    @Test func decodesTheNewEvents() {
+        let piece = hook("MessageDisplay", #""message_id": "m1", "index": 0, "final": false, "delta": "Here is the plan:\n""#)
+        #expect(piece.kind == .message(delta: "Here is the plan:\n", isFinal: false))
+        #expect(piece.messageID == "m1")
+        let stop = hook("Stop", #""last_assistant_message": "All done.", "background_tasks": [{"id": "t1", "type": "shell", "status": "running", "description": "tail logs"}, {"id": "t2", "type": "shell", "status": "completed", "description": "old"}]"#)
+        #expect(stop.lastMessage == "All done.")
+        #expect(stop.backgroundTasks == ["tail logs"])
+        #expect(hook("StopFailure", #""error": "rate_limit""#).kind == .stopFailed(error: "rate_limit"))
+        #expect(hook("PermissionRequest", #""tool_name": "Bash", "tool_input": {"command": "rm -rf build"}"#).kind == .permissionRequested)
+        #expect(hook("UserPromptSubmit", #""prompt": "Fix the pill""#).prompt == "Fix the pill")
+    }
+
+    @Test func narrationFollowsWhatClaudeWrites() {
+        var session = AgentSession(id: "s1", date: start)
+        session.apply(hook("UserPromptSubmit", #""prompt": "Fix the pill""#))
+        #expect(session.activity == nil)
+        #expect(session.prompt == "Fix the pill")
+        session.apply(hook("MessageDisplay", #""message_id": "m1", "final": false, "delta": "The tests fail because of **X**. ""#, at: 1))
+        session.apply(hook("MessageDisplay", #""message_id": "m1", "final": true, "delta": "I will fix `Pill.swift` next.""#, at: 2))
+        #expect(session.narration == "I will fix Pill.swift next.")
+        #expect(session.timeline.map(\.kind) == [.prompt, .said])
+        #expect(session.timeline.last?.text == "The tests fail because of **X**. I will fix `Pill.swift` next.")
+        // A new message starts a new line.
+        session.apply(hook("MessageDisplay", #""message_id": "m2", "final": false, "delta": "Now the tests.""#, at: 3))
+        #expect(session.timeline.count == 3)
+        #expect(session.narration == "Now the tests.")
+
+        let headline = SessionHeadline.make(session: session, planComplete: false, now: start.addingTimeInterval(4), staleAfter: 300)
+        #expect(headline == SessionHeadline(title: "Now the tests."))
+    }
+
+    @Test func toolsGetDurationsAndClearWhenDone() {
+        var session = AgentSession(id: "s1", date: start)
+        session.apply(hook("UserPromptSubmit", #""prompt": "go""#))
+        session.apply(hook("PreToolUse", #""tool_name": "Bash", "tool_use_id": "t1", "tool_input": {"command": "swift test"}"#, at: 10))
+        #expect(session.activity == "Running swift test")
+        #expect(session.activityStart == start.addingTimeInterval(10))
+        #expect(session.hasRunningWork)
+        // Silent for ten minutes, but a command is running: not stale.
+        #expect(!session.isStale(at: start.addingTimeInterval(610), after: 300))
+        let running = SessionHeadline.make(session: session, planComplete: false, now: start.addingTimeInterval(52), staleAfter: 300)
+        #expect(running.title == "Running swift test")
+        #expect(running.since == start.addingTimeInterval(10))
+
+        session.apply(hook("PostToolUseFailure", #""tool_name": "Bash", "tool_use_id": "t1", "tool_input": {"command": "swift test"}, "error": "Exit code 1\n3 tests failed""#, at: 52))
+        #expect(session.activity == nil)
+        #expect(!session.hasRunningWork)
+        let entry = session.timeline.last
+        #expect(entry?.kind == .action(.failed))
+        #expect(entry?.text == "Ran swift test")
+        #expect(entry?.detail == "Exit code 1")
+        #expect(entry?.duration == 42)
+        #expect(session.turn.commands == 1)
+        #expect(session.turn.failures == 1)
+
+        session.apply(hook("PostToolUse", #""tool_name": "Edit", "tool_input": {"file_path": "/repo/Pill.swift"}"#, at: 60))
+        session.apply(hook("PostToolUse", #""tool_name": "Edit", "tool_input": {"file_path": "/repo/Pill.swift"}"#, at: 61))
+        #expect(session.turn.editedFiles == ["Pill.swift"])
+        #expect(session.turn.text == "1 file edited · 1 command · 1 failed")
+        #expect(session.isStale(at: start.addingTimeInterval(700), after: 300))
+    }
+
+    @Test func parallelToolsFallBackToTheOneStillRunning() {
+        var session = AgentSession(id: "s1", date: start)
+        session.apply(hook("PreToolUse", #""tool_name": "Read", "tool_use_id": "a", "tool_input": {"file_path": "/r/A.swift"}"#))
+        session.apply(hook("PreToolUse", #""tool_name": "Read", "tool_use_id": "b", "tool_input": {"file_path": "/r/B.swift"}"#, at: 1))
+        #expect(session.activity == "Reading B.swift")
+        session.apply(hook("PostToolUse", #""tool_name": "Read", "tool_use_id": "b", "tool_input": {"file_path": "/r/B.swift"}"#, at: 2))
+        #expect(session.activity == "Reading A.swift")
+        #expect(session.timeline.map(\.text) == ["Reading A.swift", "Read B.swift"])
+    }
+
+    @Test func waitingSaysWhatFor() {
+        var session = AgentSession(id: "s1", date: start)
+        func title() -> String {
+            SessionHeadline.make(session: session, planComplete: false, now: start.addingTimeInterval(1), staleAfter: 300).title
+        }
+        session.apply(hook("PreToolUse", #""tool_name": "Bash", "tool_input": {"command": "rm -rf build"}"#))
+        session.apply(hook("PermissionRequest", #""tool_name": "Bash", "tool_input": {"command": "rm -rf build"}"#))
+        #expect(session.status == .waiting(.permission))
+        #expect(title() == "Needs your permission to run rm -rf build")
+        // A helper's tool does not answer Claude's permission request.
+        session.apply(hook("PreToolUse", #""tool_name": "Grep", "agent_id": "a1", "agent_type": "Explore""#))
+        #expect(session.status == .waiting(.permission))
+        session.apply(hook("PostToolUse", #""tool_name": "Bash", "tool_input": {"command": "rm -rf build"}"#))
+        #expect(session.status == .working)
+        #expect(session.permissionRequest == nil)
+
+        session.apply(hook("PreToolUse", #""tool_name": "AskUserQuestion", "tool_input": {"questions": [{"question": "Which color?"}]}"#))
+        #expect(session.status == .waiting(.question))
+        #expect(title() == "Asks you: Which color?")
+        session.apply(hook("PostToolUse", #""tool_name": "AskUserQuestion", "tool_input": {"questions": [{"question": "Which color?"}]}"#))
+
+        session.apply(hook("PreToolUse", #""tool_name": "ExitPlanMode""#))
+        session.apply(hook("PermissionRequest", #""tool_name": "ExitPlanMode""#))
+        #expect(title() == "Waiting for you to approve the plan")
+        // The late permission notification keeps the clearer reason.
+        session.apply(hook("Notification", #""notification_type": "permission_prompt""#))
+        #expect(session.status == .waiting(.planApproval))
+    }
+
+    @Test func stoppingKeepsWhatClaudeConcluded() {
+        var session = AgentSession(id: "s1", date: start)
+        session.apply(hook("UserPromptSubmit", #""prompt": "go""#))
+        session.apply(hook("Stop", ###""last_assistant_message": "## Done\n\nI fixed the pill and the tests pass.\n\n```swift\nlet x = 1\n```\n\nShould I also update the README?""###, at: 90))
+        #expect(session.status == .waiting(.finishedTurn))
+        var headline = SessionHeadline.make(session: session, planComplete: false, now: start.addingTimeInterval(91), staleAfter: 300)
+        #expect(headline == SessionHeadline(title: "Waiting for you", detail: "Should I also update the README?"))
+        #expect(session.timeline.last?.kind == .finished)
+        #expect(session.timeline.last?.duration == 90)
+
+        session.apply(hook("UserPromptSubmit", #""prompt": "yes""#, at: 100))
+        #expect(session.lastMessage == nil)
+        session.apply(hook("Stop", #""last_assistant_message": "Updated the README. It now covers the timeline.", "background_tasks": [{"type": "shell", "status": "running", "description": "Watch the build"}]"#, at: 120))
+        #expect(session.status == .waiting(.background))
+        headline = SessionHeadline.make(session: session, planComplete: false, now: start.addingTimeInterval(121), staleAfter: 300)
+        #expect(headline == SessionHeadline(title: "Waiting on 1 background task", detail: "Watch the build"))
+
+        session.apply(hook("UserPromptSubmit", #""prompt": "more""#, at: 130))
+        session.apply(hook("StopFailure", #""error": "rate_limit""#, at: 131))
+        #expect(SessionHeadline.make(session: session, planComplete: false, now: start.addingTimeInterval(132), staleAfter: 300).title == "Stopped: Rate limit reached")
+    }
+
+    @Test func helpersCarryTheirTaskAndReport() {
+        var session = AgentSession(id: "s1", date: start)
+        session.apply(hook("UserPromptSubmit", #""prompt": "go""#))
+        session.apply(hook("PreToolUse", #""tool_name": "Agent", "tool_input": {"description": "Find the hook installer", "subagent_type": "Explore", "prompt": "..."}"#, at: 1))
+        session.apply(hook("SubagentStart", #""agent_id": "a1", "agent_type": "Explore""#, at: 2))
+        #expect(session.helpers.first?.task == "Find the hook installer")
+        #expect(session.turn.helpers == 1)
+        session.apply(hook("PreToolUse", #""tool_name": "Grep", "agent_id": "a1", "agent_type": "Explore", "tool_input": {"pattern": "HookInstaller"}"#, at: 3))
+        // Claude's own "starting a helper" call is still open, so the pill names it.
+        #expect(session.activity == "Starting a helper: Find the hook installer")
+        #expect(session.helpers.first?.activity == "Searching for \u{201C}HookInstaller\u{201D}")
+        // An agent Claude Code runs for itself stops without having started: ignored.
+        session.apply(hook("SubagentStop", #""agent_id": "zz", "agent_type": """#, at: 4))
+        #expect(session.helpers.count == 1)
+        session.apply(hook("SubagentStop", #""agent_id": "a1", "agent_type": "Explore", "last_assistant_message": "It lives in HookInstaller.swift. Nothing else touches settings.""#, at: 32))
+        #expect(session.helpers.isEmpty)
+        let finished = session.timeline.last
+        #expect(finished?.kind == .helperFinished)
+        #expect(finished?.text == "Explore finished")
+        #expect(finished?.detail == "It lives in HookInstaller.swift.")
+        #expect(finished?.duration == 30)
+        #expect(session.timeline.map(\.text).contains("Explore started: Find the hook installer"))
+    }
+
+    @Test func summariesReadAsPlainSentences() {
+        #expect(MessageSummary.latest("First thing. Then `swift test` in **bold**") == "Then swift test in bold")
+        #expect(MessageSummary.latest("- [x] Read [the docs](https://x.y/z) for snake_case") == "Read the docs for snake_case")
+        #expect(MessageSummary.conclusion("Edited Pill.swift and v1.2 notes. More below.\n\n| a | b |\n|---|---|") == "Edited Pill.swift and v1.2 notes.")
+        #expect(MessageSummary.conclusion("```\ncode only\n```") == nil)
+        #expect(MessageSummary.latest("   \n") == nil)
+        #expect(ElapsedText.short(42) == "42s")
+        #expect(ElapsedText.short(185) == "3m 05s")
+        #expect(ElapsedText.short(840) == "14 min")
+        #expect(ElapsedText.short(3_900) == "1h 05m")
+    }
+
+    @Test func timelineIsCappedAndOlderInstallsAreNoticed() throws {
+        var session = AgentSession(id: "s1", date: start)
+        for index in 0..<(AgentSession.maxTimelineEntries + 20) {
+            session.apply(hook("PostToolUse", #""tool_name": "Read", "tool_input": {"file_path": "/r/\#(index).swift"}"#))
+        }
+        #expect(session.timeline.count == AgentSession.maxTimelineEntries)
+        #expect(session.timeline.first?.text == "Read 20.swift")
+
+        let current = try HookInstaller.installing(into: nil, command: "'/p/Parchment/claude-hook.sh'")
+        #expect(HookInstaller.isCurrent(in: current))
+        var settings = try #require(try JSONSerialization.jsonObject(with: current) as? [String: Any])
+        var hooks = try #require(settings["hooks"] as? [String: Any])
+        hooks["MessageDisplay"] = nil
+        settings["hooks"] = hooks
+        let older = try JSONSerialization.data(withJSONObject: settings)
+        #expect(HookInstaller.isInstalled(in: older))
+        #expect(!HookInstaller.isCurrent(in: older))
+    }
+}

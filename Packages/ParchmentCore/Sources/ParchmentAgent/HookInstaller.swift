@@ -16,8 +16,11 @@ public enum HookInstaller {
         ("PreToolUse", true),
         ("PostToolUse", true),
         ("PostToolUseFailure", true),
+        ("PermissionRequest", true),
+        ("MessageDisplay", false),
         ("Notification", false),
         ("Stop", false),
+        ("StopFailure", false),
         ("SubagentStart", false),
         ("SubagentStop", false)
     ]
@@ -82,6 +85,18 @@ public enum HookInstaller {
               let hooks = settings["hooks"] as? [String: Any] else { return false }
         return hooks.values.contains { groups in
             (groups as? [[String: Any]])?.contains { group in
+                (group["hooks"] as? [[String: Any]])?.contains(where: isParchmentHook) ?? false
+            } ?? false
+        }
+    }
+
+    /// True when Parchment's hook is set for every event in `events`. False after an update of
+    /// Parchment that listens to more events than the installed hooks cover.
+    public static func isCurrent(in data: Data?) -> Bool {
+        guard let data, let settings = try? object(from: data),
+              let hooks = settings["hooks"] as? [String: Any] else { return false }
+        return events.allSatisfy { event in
+            (hooks[event.name] as? [[String: Any]])?.contains { group in
                 (group["hooks"] as? [[String: Any]])?.contains(where: isParchmentHook) ?? false
             } ?? false
         }

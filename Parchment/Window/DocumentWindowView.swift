@@ -103,7 +103,7 @@ struct DocumentWindowView: View {
         .overlay(alignment: .bottom) {
             Group {
                 if let status {
-                    AgentPill(status: status)
+                    AgentPill(status: status, isShowingActivity: Bindable(controller).isShowingAgentActivity)
                 } else {
                     StatusPill(controller: controller, ornaments: ornaments)
                 }

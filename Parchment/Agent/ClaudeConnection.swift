@@ -3,13 +3,15 @@ import ParchmentAgent
 
 /// The Connect and Disconnect dialogs. Each says exactly what changes before changing it.
 enum ClaudeConnection {
-    static func confirmConnect() {
+    /// - Parameter isUpdate: already connected by an older Parchment; the hook is replaced by
+    ///   the current one, which listens to more events.
+    static func confirmConnect(isUpdate: Bool = false) {
         let monitor = AgentMonitor.shared
         let alert = NSAlert()
-        alert.messageText = "Connect Parchment to Claude Code?"
+        alert.messageText = isUpdate ? "Update Parchment\u{2019}s Claude Code hook?" : "Connect Parchment to Claude Code?"
         alert.informativeText = """
-        Parchment will add the hook below to \(monitor.settingsPath), so Claude Code tells Parchment \
-        which plan it is writing and what it is doing. It also adds a short note to \
+        Parchment will \(isUpdate ? "replace its hook in" : "add the hook below to") \(monitor.settingsPath)\(isUpdate ? " with the one below" : ""), so Claude Code tells Parchment \
+        which plan it is writing, what it is doing, what it says and what it asks you. It also adds a short note to \
         \(monitor.memoryPath) asking Claude to mark plan tasks as in progress [/], blocked [!] or \
         done [x] as it works. Everything else in both files stays as it is, and a backup of each \
         is saved next to it.
@@ -17,7 +19,7 @@ enum ClaudeConnection {
         Claude Code sessions that are already running need a restart to pick this up.
         """
         alert.accessoryView = codeView("\(monitor.settingsPath)\n\n\(monitor.hookPreview)\n\(monitor.memoryPath)\n\n\(InstructionsInstaller.instructions)")
-        alert.addButton(withTitle: "Connect")
+        alert.addButton(withTitle: isUpdate ? "Update" : "Connect")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {

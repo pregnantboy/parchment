@@ -59,15 +59,21 @@ struct SettingsView: View {
 private struct ClaudeConnectionRow: View {
     var body: some View {
         let isConnected = AgentMonitor.shared.isConnected
+        let needsUpdate = AgentMonitor.shared.needsUpdate
         LabeledContent {
             if isConnected {
+                if needsUpdate {
+                    Button("Update…") { ClaudeConnection.confirmConnect(isUpdate: true) }
+                }
                 Button("Disconnect…") { ClaudeConnection.confirmDisconnect() }
             } else {
                 Button("Connect…") { ClaudeConnection.confirmConnect() }
             }
         } label: {
-            Text(isConnected ? "Connected" : "Not connected")
-            Text("Lets Parchment follow the plans Claude Code writes and show what it is doing.")
+            Text(isConnected ? (needsUpdate ? "Connected, update available" : "Connected") : "Not connected")
+            Text(needsUpdate
+                ? "Update the hook so Parchment can show what Claude says, what it asks permission for, and why it stopped."
+                : "Lets Parchment follow the plans Claude Code writes and show what it is doing.")
         }
     }
 }

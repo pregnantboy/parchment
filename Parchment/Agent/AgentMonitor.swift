@@ -13,6 +13,9 @@ final class AgentMonitor {
     private(set) var followers: [URL: String] = [:]
     /// Whether Parchment's hook is in Claude Code's settings.
     private(set) var isConnected = false
+    /// Connected by an older Parchment, whose hook misses events this version listens to
+    /// (what Claude says, permission requests). Connecting again adds them.
+    private(set) var needsUpdate = false
 
     /// The plan window Parchment opened by itself for each session, so a newer plan can replace it.
     @ObservationIgnored private var autoOpened: [String: URL] = [:]
@@ -143,7 +146,9 @@ final class AgentMonitor {
     // MARK: Connecting to Claude Code
 
     func refreshConnection() {
-        isConnected = HookInstaller.isInstalled(in: try? Data(contentsOf: settingsURL))
+        let settings = try? Data(contentsOf: settingsURL)
+        isConnected = HookInstaller.isInstalled(in: settings)
+        needsUpdate = isConnected && !HookInstaller.isCurrent(in: settings)
     }
 
     /// The JSON Parchment adds to Claude Code's settings, for showing before connecting.
