@@ -102,6 +102,47 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         return count
     }
 
+    // MARK: - Hard-wrapped paragraphs
+
+    /// In reading mode, a line break marked `parchmentSoftBreak` joins a hard-wrapped line to
+    /// the one above: it is laid out as a space (or, after a Markdown hard break, as a line
+    /// break inside the paragraph), so the joined lines share one paragraph and its indent.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        shouldUse action: NSLayoutManager.ControlCharacterAction,
+        forControlCharacterAt charIndex: Int
+    ) -> NSLayoutManager.ControlCharacterAction {
+        guard let storage = layoutManager.textStorage, charIndex < storage.length,
+              let keepsLineBreak = storage.attribute(.parchmentSoftBreak, at: charIndex, effectiveRange: nil) as? NSNumber
+        else { return action }
+        // The `\r` of a `\r\n` takes no room; the `\n` does the joining.
+        guard storage.mutableString.character(at: charIndex) == Self.newline else { return .zeroAdvancement }
+        return keepsLineBreak.boolValue ? .lineBreak : .whitespace
+    }
+
+    /// A joined line break is as wide as a space in its font.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        boundingBoxForControlGlyphAt glyphIndex: Int,
+        for textContainer: NSTextContainer,
+        proposedLineFragment proposedRect: NSRect,
+        glyphPosition: NSPoint,
+        characterIndex charIndex: Int
+    ) -> NSRect {
+        guard let storage = layoutManager.textStorage, charIndex < storage.length else {
+            return NSRect(origin: glyphPosition, size: .zero)
+        }
+        let font = (storage.attribute(.font, at: charIndex, effectiveRange: nil) as? NSFont) ?? FontBook.shared.text(size: 18)
+        let width = (" " as NSString).size(withAttributes: [.font: font]).width
+        return NSRect(x: glyphPosition.x, y: glyphPosition.y, width: width, height: 0)
+    }
+
+    /// Whether the character at `index` ends a paragraph: a line break reading mode doesn't join.
+    private func endsParagraph(at index: Int, in storage: NSTextStorage) -> Bool {
+        storage.mutableString.character(at: index) == Self.newline
+            && storage.attribute(.parchmentSoftBreak, at: index, effectiveRange: nil) == nil
+    }
+
     // MARK: - Wet ink
 
     /// Redraws drying text with a soft halo and extra density that fade as it dries, so a
@@ -133,7 +174,6 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
     private func drawDecorations(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         guard let storage = textStorage, storage.length > 0, glyphsToShow.length > 0,
               let context = NSGraphicsContext.current?.cgContext else { return }
-        let characters = storage.mutableString
         let length = storage.length
 
         enumerateLineFragments(forGlyphRange: glyphsToShow) { rect, usedRect, container, glyphRange, _ in
@@ -145,9 +185,9 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
                 rect: rect,
                 usedRect: usedRect,
                 containerWidth: container.size.width,
-                startsLine: charRange.location == 0 || characters.character(at: charRange.location - 1) == Self.newline,
-                endsLine: end >= length || characters.character(at: end - 1) == Self.newline,
-                endsWithBreak: end <= length && characters.character(at: end - 1) == Self.newline
+                startsLine: charRange.location == 0 || self.endsParagraph(at: charRange.location - 1, in: storage),
+                endsLine: end >= length || self.endsParagraph(at: end - 1, in: storage),
+                endsWithBreak: end <= length && self.endsParagraph(at: end - 1, in: storage)
             )
             let attributes = storage.attributes(at: charRange.location, effectiveRange: nil)
             let font = (attributes[.font] as? NSFont) ?? FontBook.shared.text(size: 18)

@@ -18,6 +18,12 @@ nonisolated extension NSAttributedString.Key {
     /// Value: `NSNumber(true)`, on Markdown symbols that reading mode hides. The layout
     /// manager gives their glyphs no width and draws nothing for them.
     static let parchmentHidden = NSAttributedString.Key("app.parchment.hidden")
+    /// Value: `NSNumber(Bool keepsLineBreak)`, on the line break before a line that continues
+    /// a paragraph, in reading mode only. The layout manager lays the break out as a space, so
+    /// a hard-wrapped paragraph flows as one. When the line above ends in two spaces (a
+    /// Markdown hard break), `keepsLineBreak` is true and the text starts a new line instead,
+    /// still inside the paragraph.
+    static let parchmentSoftBreak = NSAttributedString.Key("app.parchment.softBreak")
     /// Value: `NSNumber(true)`, on the transparent `-`, `*` or `+` of a bullet in reading
     /// mode. The layout manager draws a dot or diamond in its place.
     static let parchmentBullet = NSAttributedString.Key("app.parchment.bullet")
