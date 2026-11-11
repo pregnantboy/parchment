@@ -5,7 +5,7 @@ nonisolated struct EditorMetrics: Equatable, Sendable {
     static let defaultFontSize = 15.0
     static let fontSizeRange = 12.0...28.0
     /// Body line height as a multiple of the text size.
-    static let defaultLineHeight = 1.2
+    static let defaultLineHeight = 1.5
     static let lineHeightRange = 0.8...2.2
 
     let fontSize: Double

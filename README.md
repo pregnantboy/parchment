@@ -4,7 +4,7 @@ Parchment is a native Markdown editor for the Mac. It edits one pane of plain te
 
 It is set in an old-style book serif. A reading mode (⇧⌘R) hides the Markdown symbols and locks the text, while checkboxes stay clickable and links open with a click. When the window is wide enough, the outline sits in a panel on the left.
 
-Text size and line spacing are set in Parchment > Settings (15 pt and 1.2 by default; line spacing goes from 0.8 to 2.2).
+Text size and line spacing are set in Parchment > Settings (15 pt and 1.5 by default; line spacing goes from 0.8 to 2.2).
 
 Two effects give it a storybook feel, and each can be switched off in Parchment > Settings:
 
