@@ -237,22 +237,21 @@ final class MarkdownStyler {
     }
 
     /// The space after line `index`, given the space `normal` puts after a line of its kind.
-    /// While editing, the lines of one paragraph sit close together, with the space only after
-    /// the last. Reading mode lays them out as one paragraph, so each line carries the space
-    /// the paragraph ends with.
+    /// The lines of a hard-wrapped paragraph are laid out as one paragraph, so each line carries
+    /// the space the paragraph ends with.
     private func spacingAfter(line index: Int, _ normal: (MarkdownLine) -> Double) -> Double {
-        if isReading { return normal(lines[paragraphTail(of: index)]) }
-        return continues(after: index) ? 0 : normal(lines[index])
+        normal(lines[paragraphTail(of: index)])
     }
 
-    /// In reading mode, marks the line break before a continuation so the layout manager lays it
-    /// out as a space. Two spaces at the end of the line above keep the break, as in Markdown.
+    /// Marks the line break before a continuation so the layout manager lays it out as a space,
+    /// in edit and reading mode alike. Two spaces at the end of the line above keep the break,
+    /// as in Markdown.
     private func styleBreak(before index: Int, in storage: NSTextStorage) {
         guard index > 0, index < lines.count else { return }
         let above = lines[index - 1]
         let range = NSRange(location: above.range.upperBound, length: above.lineBreakLength)
         guard range.length > 0, NSMaxRange(range) <= storage.length else { return }
-        guard isReading, lines[index].isContinuation else {
+        guard lines[index].isContinuation else {
             storage.removeAttribute(.parchmentSoftBreak, range: range)
             return
         }
@@ -261,9 +260,8 @@ final class MarkdownStyler {
         storage.addAttribute(.parchmentSoftBreak, value: NSNumber(value: keepsLineBreak), range: range)
     }
 
-    /// Styles a plain line that continues the paragraph, list item or quote above it. While
-    /// editing it lines up under that block's text, its leading spaces hanging to the left. In
-    /// reading mode those spaces are hidden and the line flows on from the one above.
+    /// Styles a plain line that continues the paragraph, list item or quote above it. Its
+    /// leading spaces are hidden and it flows on from the line above.
     private func styleContinuation(at index: Int, in storage: NSTextStorage) {
         let line = lines[index]
         let head = lines[paragraphHead(of: index)]
@@ -293,9 +291,8 @@ final class MarkdownStyler {
             spacing = spacingAfter(line: index) { _ in metrics.paragraphSpacing }
         }
 
-        let leading = width(of: text.string(in: line.prefixRange), font: font)
         let paragraph = paragraphStyle(ParagraphKey(
-            firstLineHeadIndent: isReading ? indent : max(0, indent - leading),
+            firstLineHeadIndent: indent,
             headIndent: indent,
             lineSpacing: lineSpacing,
             maxLineHeight: maxLineHeight,
@@ -309,8 +306,8 @@ final class MarkdownStyler {
         }
     }
 
-    /// Hides a continuation's leading spaces (and a quote line's `>`) in reading mode, and
-    /// strikes it through when it continues a ticked task.
+    /// Hides a continuation's leading spaces (and a quote line's `>`), and strikes it through
+    /// when it continues a ticked task.
     private func finishContinuation(at index: Int, in storage: NSTextStorage) {
         let line = lines[index]
         if case .task(.done) = lines[paragraphHead(of: index)].kind, !line.contentRange.isEmpty {
@@ -321,7 +318,7 @@ final class MarkdownStyler {
             ], range: NSRange(line.contentRange))
         }
         let prefix = NSRange(line.prefixRange)
-        guard isReading, prefix.length > 0 else { return }
+        guard prefix.length > 0 else { return }
         storage.removeAttribute(.kern, range: prefix)
         storage.addAttribute(.parchmentHidden, value: NSNumber(value: true), range: prefix)
     }
@@ -564,14 +561,19 @@ final class MarkdownStyler {
 
     // MARK: - Table columns
 
-    /// Lines up a table's columns: the last visible character of each cell is kerned so the
-    /// pipe after it sits at the same x on every row. When the table is too wide for the
-    /// column, the earlier columns still line up and each row's last cell wraps under itself.
-    /// Only a table whose earlier columns alone don't fit is left as typed. In reading mode,
-    /// rules go under the header and between rows.
+    /// While editing, a table stays as typed, its pipes faded so the cells read apart. In
+    /// reading mode it is drawn as a grid, or, when it can't be, its columns are lined up:
+    /// the last visible character of each cell is kerned so the pipe after it sits at the same
+    /// x on every row. When the table is too wide for the column, the earlier columns still
+    /// line up and each row's last cell wraps under itself. Only a table whose earlier columns
+    /// alone don't fit is left as typed. Rules go under the header and between rows.
     private func alignTable(_ block: Range<Int>, in storage: NSTextStorage) {
         guard !block.isEmpty else { return }
-        if isReading, showRenderedTable(block, in: storage) { return }
+        guard isReading else {
+            fadePipes(block, in: storage)
+            return
+        }
+        if showRenderedTable(block, in: storage) { return }
         let cells = block.map { cellRanges(of: lines[$0]) }
         let widths = cells.map { $0.map { visibleWidth(of: $0, in: storage) } }
         let isDelimiter = block.map { lines[$0].kind == .tableDelimiter }
@@ -629,7 +631,6 @@ final class MarkdownStyler {
             }
         }
 
-        guard isReading else { return }
         if !aligned {
             // Unaligned, the cells need their pipes to stay apart.
             for row in 0..<block.count where !isDelimiter[row] {
@@ -647,6 +648,17 @@ final class MarkdownStyler {
                 storage.addAttribute(.parchmentTableRule, value: ruleWidth, range: range)
             } else if line.kind == .tableRow, !line.blockPosition.isLast {
                 storage.addAttribute(.parchmentTableRowRule, value: ruleWidth, range: range)
+            }
+        }
+    }
+
+    /// Draws the pipes between a table's cells in marker color. The `---|---` row already is.
+    private func fadePipes(_ block: Range<Int>, in storage: NSTextStorage) {
+        for index in block where lines[index].kind != .tableDelimiter {
+            for cell in cellRanges(of: lines[index]).dropLast() {
+                let pipe = NSRange(location: NSMaxRange(cell), length: 1)
+                guard NSMaxRange(pipe) <= storage.length else { continue }
+                storage.addAttribute(.foregroundColor, value: Palette.marker, range: pipe)
             }
         }
     }

@@ -15,7 +15,7 @@ struct StatusPill: View {
             .foregroundStyle(Color.parchmentInk)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .glassEffect(.regular, in: .capsule)
+            .clearGlass(in: .capsule)
             .opacity(isVisible ? 1 : 0)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isVisible)
             .accessibilityElement(children: .combine)

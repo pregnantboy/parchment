@@ -63,7 +63,7 @@ struct AgentPill: View {
         }
         .padding(.horizontal, headline.detail == nil && !hasBar ? 14 : 18)
         .padding(.vertical, 7)
-        .glassEffect(.regular, in: .capsule)
+        .clearGlass(in: .capsule)
         .contentShape(.capsule)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Shows what Claude has done")
@@ -175,7 +175,7 @@ private struct ActivityTicker: View {
         .foregroundStyle(action.succeeded ? Color.parchmentMuted : Color.parchmentAccent)
         .padding(.horizontal, 9)
         .padding(.vertical, 3)
-        .glassEffect(.regular, in: .capsule)
+        .clearGlass(in: .capsule)
         .opacity(min(1, max(0, (Self.lifetime - age) / Self.fade)))
         .transition(.opacity)
     }

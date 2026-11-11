@@ -19,7 +19,7 @@ nonisolated extension NSAttributedString.Key {
     /// manager gives their glyphs no width and draws nothing for them.
     static let parchmentHidden = NSAttributedString.Key("app.parchment.hidden")
     /// Value: `NSNumber(Bool keepsLineBreak)`, on the line break before a line that continues
-    /// a paragraph, in reading mode only. The layout manager lays the break out as a space, so
+    /// a paragraph, in edit and reading mode. The layout manager lays the break out as a space, so
     /// a hard-wrapped paragraph flows as one. When the line above ends in two spaces (a
     /// Markdown hard break), `keepsLineBreak` is true and the text starts a new line instead,
     /// still inside the paragraph.
