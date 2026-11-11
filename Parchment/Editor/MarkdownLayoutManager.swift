@@ -224,7 +224,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             }
             storage.enumerateAttribute(.parchmentInlineCode, in: charRange, options: []) { value, codeRange, _ in
                 guard value != nil else { return }
-                self.drawInlineCodePill(codeRange, fragmentRect: rect, container: container, origin: origin, in: context)
+                self.drawInlineCodePill(codeRange, fragmentRect: rect, fragmentGlyphs: glyphRange, container: container, origin: origin, in: context)
             }
             storage.enumerateAttribute(.parchmentTaskBox, in: charRange, options: []) { value, boxRange, _ in
                 guard let raw = (value as? NSNumber)?.intValue, let state = TaskState(rawValue: raw) else { return }
@@ -275,7 +275,7 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
     /// Draws a rounded pill behind the part of an inline code span that sits on this line
     /// fragment. `enumerateAttribute` already clamps `codeRange` to the fragment, so wrapped
     /// code gets one snug pill per line instead of a slab reaching into the margin.
-    private func drawInlineCodePill(_ codeRange: NSRange, fragmentRect: CGRect, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
+    private func drawInlineCodePill(_ codeRange: NSRange, fragmentRect: CGRect, fragmentGlyphs: NSRange, container: NSTextContainer, origin: NSPoint, in context: CGContext) {
         guard let storage = textStorage else { return }
         let characters = storage.mutableString
 
@@ -287,9 +287,12 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         guard upper > lower else { return }
         let visible = NSRange(location: lower, length: upper - lower)
 
-        let glyphs = glyphRange(forCharacterRange: visible, actualCharacterRange: nil)
-        guard glyphs.length > 0 else { return }
-        let bounds = boundingRect(forGlyphRange: glyphs, in: container)
+        // Only this line's glyphs, measured as the text's own extent on this line.
+        // `boundingRect(forGlyphRange:)` unions every line the range touches, so a glyph left
+        // on the line above (such as a joined line break) used to stretch the pill across
+        // the whole line.
+        let glyphs = NSIntersectionRange(glyphRange(forCharacterRange: visible, actualCharacterRange: nil), fragmentGlyphs)
+        guard glyphs.length > 0, let bounds = lineExtent(of: glyphs, fragmentRect: fragmentRect, in: container) else { return }
         let font = (storage.attribute(.font, at: lower, effectiveRange: nil) as? NSFont) ?? FontBook.shared.mono(size: 15)
         let baseline = fragmentRect.minY + location(forGlyphAt: glyphs.location).y
 
@@ -307,6 +310,21 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         context.addPath(Self.roundedPath(pill, radius: Self.inlineCodeRadius))
         context.fillPath()
         context.restoreGState()
+    }
+
+    /// The horizontal extent of `glyphs` on the line fragment `fragmentRect`, from the
+    /// selection-style rects of the range, keeping only the one on this line.
+    private func lineExtent(of glyphs: NSRange, fragmentRect: CGRect, in container: NSTextContainer) -> CGRect? {
+        var result: CGRect?
+        enumerateEnclosingRects(
+            forGlyphRange: glyphs,
+            withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+            in: container
+        ) { rect, _ in
+            guard rect.midY >= fragmentRect.minY, rect.midY <= fragmentRect.maxY, rect.width > 0 else { return }
+            result = result.map { $0.union(rect) } ?? rect
+        }
+        return result
     }
 
     private static func isSpace(_ character: unichar) -> Bool {
