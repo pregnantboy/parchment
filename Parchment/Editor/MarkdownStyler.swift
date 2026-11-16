@@ -669,8 +669,7 @@ final class MarkdownStyler {
     /// the table can't be rendered, leaving the aligned text in place.
     private func showRenderedTable(_ block: Range<Int>, in storage: NSTextStorage) -> Bool {
         let source = block.map { text.string(in: lines[$0].range) }.joined(separator: "\n")
-        let width = textWidth.isFinite ? textWidth : metrics.measure
-        guard let rendered = TableRenderer.shared.render(source, width: width, fontSize: metrics.fontSize) else { return false }
+        guard let rendered = TableRenderer.shared.render(source, fontSize: metrics.fontSize) else { return false }
 
         let tiny = FontBook.shared.text(size: 1)
         for index in block {

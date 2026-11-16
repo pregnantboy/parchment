@@ -582,7 +582,66 @@ final class ParchmentTextView: NSTextView {
 
     override func scrollWheel(with event: NSEvent) {
         lastUserScroll = Date()
+        if scrollTableSideways(with: event) { return }
         super.scrollWheel(with: event)
+    }
+
+    /// A table wider than the column scrolls sideways under the pointer. Mostly horizontal
+    /// scrolling (or shift-scrolling) moves the table; anything else scrolls the page.
+    private func scrollTableSideways(with event: NSEvent) -> Bool {
+        guard isReading, let layout = layoutManager as? MarkdownLayoutManager,
+              let container = textContainer else { return false }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let hit = tableImage(at: point) else { return false }
+
+        var delta = event.scrollingDeltaX
+        let vertical = event.scrollingDeltaY
+        if delta == 0, event.modifierFlags.contains(.shift) { delta = vertical }
+        guard abs(delta) > abs(vertical) || event.modifierFlags.contains(.shift) else { return false }
+
+        let columnWidth = container.size.width - CGFloat(effectiveGutter)
+        let viewport = layout.tableViewport(for: hit.image, columnWidth: columnWidth)
+        guard viewport.isScrollable else { return false }
+        if !event.hasPreciseScrollingDeltas { delta *= 10 }
+        let maxOffset = viewport.total - viewport.width
+        let next = min(max(0, viewport.offset - delta), maxOffset)
+        if next != viewport.offset {
+            layout.tableOffsets[ObjectIdentifier(hit.image)] = next
+            if layout.tableOffsets.count > 64 { layout.tableOffsets = [ObjectIdentifier(hit.image): next] }
+            setNeedsDisplay(hit.rect)
+        }
+        return true
+    }
+
+    /// The rendered table drawn under `point` (in view coordinates), with the area it covers.
+    private func tableImage(at point: NSPoint) -> (image: NSImage, rect: NSRect)? {
+        guard let layoutManager, let container = textContainer, let storage = textStorage,
+              storage.length > 0 else { return nil }
+        let origin = textContainerOrigin
+        guard point.x >= origin.x + CGFloat(effectiveGutter) else { return nil }
+
+        if let trailing = trailingImage(), trailing.isTable, let line = lineRect(forCharacterAt: storage.length - 1) {
+            let rect = NSRect(
+                x: origin.x + CGFloat(effectiveGutter),
+                y: line.maxY + Self.imageTopGap,
+                width: max(0, container.size.width - CGFloat(effectiveGutter)),
+                height: trailing.height + Self.imageTopGap
+            )
+            if rect.contains(point) { return (trailing.image, rect) }
+        }
+
+        let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(for: local, in: container, fractionOfDistanceThroughGlyph: &fraction)
+        guard glyph < layoutManager.numberOfGlyphs else { return nil }
+        var glyphs = NSRange()
+        let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &glyphs)
+        guard fragment.contains(local) else { return nil }
+        let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        guard characters.location < storage.length else { return nil }
+        let attributes = storage.attributes(at: characters.location, effectiveRange: nil)
+        guard attributes[.parchmentTable] != nil, let image = attributes[.parchmentImage] as? NSImage else { return nil }
+        return (image, fragment.offsetBy(dx: origin.x, dy: origin.y))
     }
 
     /// The layout manager draws images in their line's paragraph spacing; the last line has
@@ -591,12 +650,32 @@ final class ParchmentTextView: NSTextView {
         guard trailingImageReserve > 0, let trailing = trailingImage(), let storage = textStorage,
               let line = lineRect(forCharacterAt: storage.length - 1) else { return }
         let size = trailing.image.size
-        let destination = NSRect(
+        var destination = NSRect(
             x: textContainerOrigin.x + CGFloat(effectiveGutter),
             y: line.maxY + Self.imageTopGap,
             width: trailing.height * size.width / size.height,
             height: trailing.height
         )
+        if trailing.isTable, let layout = layoutManager as? MarkdownLayoutManager, let container = textContainer {
+            let viewport = layout.tableViewport(for: trailing.image, columnWidth: container.size.width - CGFloat(effectiveGutter))
+            destination.size.width = viewport.width
+            guard destination.insetBy(dx: 0, dy: -8).intersects(dirtyRect) else { return }
+            NSGraphicsContext.saveGraphicsState()
+            destination.clip()
+            trailing.image.draw(
+                in: destination,
+                from: NSRect(x: viewport.offset, y: 0, width: viewport.width, height: size.height),
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: true,
+                hints: nil
+            )
+            NSGraphicsContext.restoreGraphicsState()
+            if viewport.isScrollable, let context = NSGraphicsContext.current?.cgContext {
+                layout.drawTableScroller(viewport, below: destination, in: context)
+            }
+            return
+        }
         guard destination.intersects(dirtyRect) else { return }
         NSGraphicsContext.saveGraphicsState()
         let radius = trailing.isTable ? 0 : Self.imageRadius

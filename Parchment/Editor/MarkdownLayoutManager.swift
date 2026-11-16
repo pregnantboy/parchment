@@ -219,8 +219,8 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
             }
             if line.endsWithBreak, let image = attributes[.parchmentImage] as? NSImage,
                let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle {
-                let radius = attributes[.parchmentTable] == nil ? Self.imageRadius : 0
-                self.drawImage(image, radius: radius, line: line, paragraph: paragraph, origin: origin, in: context)
+                let isTable = attributes[.parchmentTable] != nil
+                self.drawImage(image, isTable: isTable, radius: isTable ? 0 : Self.imageRadius, line: line, paragraph: paragraph, origin: origin, in: context)
             }
             storage.enumerateAttribute(.parchmentInlineCode, in: charRange, options: []) { value, codeRange, _ in
                 guard value != nil else { return }
@@ -395,6 +395,38 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
     }
 
     // MARK: - Tables
+
+    /// How far each rendered table is scrolled sideways, by picture. The text view sets it.
+    var tableOffsets: [ObjectIdentifier: CGFloat] = [:]
+    private static let scrollerHeight: CGFloat = 3
+
+    /// What part of a rendered table shows in a column `columnWidth` points wide.
+    func tableViewport(for image: NSImage, columnWidth: CGFloat) -> TableViewport {
+        let total = image.size.width
+        let width = max(0, min(total, columnWidth))
+        let maxOffset = max(0, total - width)
+        let offset = min(max(0, tableOffsets[ObjectIdentifier(image)] ?? 0), maxOffset)
+        return TableViewport(total: total, width: width, offset: offset)
+    }
+
+    /// A thin thumb under a scrolled table, showing how much of it is in view.
+    func drawTableScroller(_ viewport: TableViewport, below table: CGRect, in context: CGContext) {
+        guard viewport.total > 0 else { return }
+        let height = Self.scrollerHeight
+        let track = CGRect(x: table.minX, y: table.maxY + 4, width: viewport.width, height: height)
+        let thumbWidth = max(24, track.width * viewport.width / viewport.total)
+        let travel = track.width - thumbWidth
+        let maxOffset = viewport.total - viewport.width
+        let thumbX = track.minX + (maxOffset > 0 ? travel * viewport.offset / maxOffset : 0)
+        context.saveGState()
+        Palette.rule.setFill()
+        context.addPath(Self.roundedPath(track, radius: height / 2))
+        context.fillPath()
+        Palette.marker.setFill()
+        context.addPath(Self.roundedPath(CGRect(x: thumbX, y: track.minY, width: thumbWidth, height: height), radius: height / 2))
+        context.fillPath()
+        context.restoreGState()
+    }
 
     /// A hairline across a table in reading mode, from the gutter edge.
     private func drawTableRule(at y: CGFloat, width: CGFloat, color: NSColor, origin: NSPoint, in context: CGContext) {
@@ -596,17 +628,38 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
 
     /// Draws an image in the paragraph spacing the styler reserved below its line. The spacing
     /// is the image height plus 24pt of padding, so the size is recovered from it exactly.
-    private func drawImage(_ image: NSImage, radius: CGFloat, line: LineFragment, paragraph: NSParagraphStyle, origin: NSPoint, in context: CGContext) {
+    private func drawImage(_ image: NSImage, isTable: Bool = false, radius: CGFloat, line: LineFragment, paragraph: NSParagraphStyle, origin: NSPoint, in context: CGContext) {
         let size = image.size
         let height = paragraph.paragraphSpacing - Self.imageTopGap * 2
         guard size.width > 0, size.height > 0, height > 1 else { return }
         let width = height * size.width / size.height
-        let destination = CGRect(
+        var destination = CGRect(
             x: origin.x + gutter,
             y: origin.y + line.rect.maxY - Self.imageTopGap - height,
             width: width,
             height: height
         )
+
+        if isTable {
+            // A table wider than the column shows the part at its scroll offset.
+            let viewport = tableViewport(for: image, columnWidth: line.containerWidth - gutter)
+            destination.size.width = viewport.width
+            context.saveGState()
+            context.clip(to: destination)
+            image.draw(
+                in: destination,
+                from: NSRect(x: viewport.offset, y: 0, width: viewport.width, height: size.height),
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: true,
+                hints: nil
+            )
+            context.restoreGState()
+            if viewport.isScrollable {
+                drawTableScroller(viewport, below: destination, in: context)
+            }
+            return
+        }
 
         context.saveGState()
         context.addPath(Self.roundedPath(destination, radius: radius))
@@ -628,6 +681,18 @@ nonisolated final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerD
         let corner = max(0, min(radius, rect.width / 2, rect.height / 2))
         return CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil)
     }
+}
+
+/// The slice of a rendered table that shows in the column.
+nonisolated struct TableViewport: Sendable {
+    /// The picture's full width.
+    var total: CGFloat
+    /// The width that shows.
+    var width: CGFloat
+    /// The x in the picture where the visible part starts.
+    var offset: CGFloat
+
+    var isScrollable: Bool { total - width > 0.5 }
 }
 
 /// Text typed moments ago, still drying.
