@@ -24,9 +24,9 @@ final class TableRenderer {
     private var cache: [Key: Rendered] = [:]
     private static let cacheLimit = 64
     private static let scale = 2.0
-    /// The widest a column grows, in ems. Longer cells wrap inside it, so a table with prose
+    /// The widest a column grows, in ems (the text column is about 37). Longer cells wrap inside it, so a table with prose
     /// cells gets tall rows rather than a column wider than the window.
-    private static let maxColumnEm = 22.0
+    private static let maxColumnEm = 30.0
     /// Tables wider than this aren't drawn as a grid, to keep the picture's memory in check.
     private static let maxImageWidth = 8000.0
 
