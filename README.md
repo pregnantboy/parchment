@@ -96,6 +96,10 @@ To undo the setup, click **Disconnect…** in the same place; it removes only Pa
 | Toggle task | ⇧⌘L |
 | Indent | ⌘] |
 | Outdent | ⌘[ |
+| Find | ⌘F |
+| Find and replace | ⌥⌘F |
+| Next or previous match | ⌘G, ⇧⌘G |
+| Find the selected text | ⌘E |
 | Focus mode | ⇧⌘F |
 | Typewriter mode | ⇧⌘T |
 | Reading mode | ⇧⌘R |
